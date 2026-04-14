@@ -37,7 +37,9 @@ from config import (
 # Constants
 # ---------------------------------------------------------------------------
 
-SLEEP_BETWEEN_REQUESTS: float = 0.6   # seconds
+SLEEP_BETWEEN_REQUESTS: float = 1.2   # seconds — stats.nba.com needs breathing room
+TIMEOUT:               int   = 60    # seconds per request
+MAX_RETRIES:           int   = 3     # retry on timeout/5xx before giving up
 
 # NBA stats API endpoints
 PBP_ENDPOINT      = "https://stats.nba.com/stats/playbyplayv2"
@@ -47,20 +49,26 @@ GAMELOG_ENDPOINT  = "https://stats.nba.com/stats/playergamelog"
 # Event action type for field-goal attempts (makes + misses)
 FGA_EVENT_TYPES = {1, 2}   # 1 = made FG, 2 = missed FG
 
+# stats.nba.com requires headers that match a real Chrome browser exactly —
+# missing Origin or Sec-Fetch-* causes silent timeouts or 403s.
 HEADERS = {
-    "Host":             "stats.nba.com",
-    "User-Agent":       (
+    "Host":               "stats.nba.com",
+    "User-Agent":         (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/122.0.0.0 Safari/537.36"
     ),
-    "Accept":           "application/json, text/plain, */*",
-    "Accept-Language":  "en-US,en;q=0.9",
-    "Accept-Encoding":  "gzip, deflate, br",
+    "Accept":             "application/json, text/plain, */*",
+    "Accept-Language":    "en-US,en;q=0.9",
+    "Accept-Encoding":    "gzip, deflate, br",
+    "Origin":             "https://www.nba.com",
+    "Referer":            "https://www.nba.com/",
     "x-nba-stats-origin": "stats",
     "x-nba-stats-token":  "true",
-    "Referer":          "https://www.nba.com/",
-    "Connection":       "keep-alive",
+    "Sec-Fetch-Site":     "same-site",
+    "Sec-Fetch-Mode":     "cors",
+    "Sec-Fetch-Dest":     "empty",
+    "Connection":         "keep-alive",
 }
 
 logging.basicConfig(
@@ -77,17 +85,28 @@ log = logging.getLogger(__name__)
 
 def _get(url: str, params: dict) -> dict | None:
     """
-    GET request with shared headers and graceful error handling.
+    GET request with shared headers, retry logic, and graceful error handling.
+    Retries up to MAX_RETRIES times on timeout or 5xx errors.
     Returns parsed JSON dict or None on failure.
     """
-    try:
-        resp = requests.get(url, params=params, headers=HEADERS, timeout=30)
-        resp.raise_for_status()
-        return resp.json()
-    except requests.exceptions.HTTPError as exc:
-        log.warning("HTTP %s for %s %s", exc.response.status_code, url, params)
-    except requests.exceptions.RequestException as exc:
-        log.warning("Request error: %s", exc)
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            resp = requests.get(url, params=params, headers=HEADERS, timeout=TIMEOUT)
+            resp.raise_for_status()
+            return resp.json()
+        except requests.exceptions.HTTPError as exc:
+            status = exc.response.status_code
+            log.warning("HTTP %s for %s (attempt %d/%d)", status, url, attempt, MAX_RETRIES)
+            if status < 500:
+                return None  # 4xx — no point retrying
+        except requests.exceptions.Timeout:
+            log.warning("Timeout for %s (attempt %d/%d)", url, attempt, MAX_RETRIES)
+        except requests.exceptions.RequestException as exc:
+            log.warning("Request error: %s (attempt %d/%d)", exc, attempt, MAX_RETRIES)
+            return None
+        # Exponential backoff before retry
+        time.sleep(SLEEP_BETWEEN_REQUESTS * (2 ** attempt))
+    log.warning("Giving up on %s after %d attempts", url, MAX_RETRIES)
     return None
 
 
