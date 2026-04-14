@@ -1,0 +1,13 @@
+python-dotenv
+nba_api
+requests
+pandas
+pyarrow
+torch
+torchvision
+mediapipe
+opencv-python
+scikit-learn
+matplotlib
+seaborn
+tqdm
