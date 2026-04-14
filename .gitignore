@@ -1,1 +1,25 @@
+# Environment
+.venv/
 .env
+
+# Claude Code internals
+.claude/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# Data (generated — run the ingestion/processing scripts to rebuild)
+data/raw/
+data/processed/
+data/eda_figures/
+data/frames/
+data/pose/
+
+# Model checkpoints
+checkpoints/
+
+# macOS
+.DS_Store
