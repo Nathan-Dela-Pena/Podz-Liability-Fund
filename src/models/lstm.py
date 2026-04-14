@@ -54,33 +54,29 @@ from config import (
 
 class PlayerSequenceDataset(Dataset):
     """
-    Loads the merged game-log + odds parquet from PROCESSED_DIR and builds
-    rolling windows of length WINDOW_SIZE for each player.
+    Loads train/val/test CSV produced by build_sequences.py.
+
+    Each row in that CSV is already one ready-to-use sample with flattened
+    window columns named {FEAT}_t0 … {FEAT}_t{W-1} (already z-score
+    normalised per player).  This class reshapes them back to
+    (WINDOW_SIZE, num_features) tensors.
 
     Each sample is:
-      x : (WINDOW_SIZE, num_features)  — normalized feature window
+      x : (WINDOW_SIZE, num_features)  — normalised feature window
       y : scalar 0/1                   — 0 = under, 1 = over
     """
 
     def __init__(self, csv_path: str, window_size: int = WINDOW_SIZE):
-        df = pd.read_csv(csv_path).sort_values(["PLAYER_NAME", "GAME_DATE"])
+        df = pd.read_csv(csv_path)
         self.window = window_size
         self.samples: list[tuple[np.ndarray, int]] = []
 
-        for player, grp in df.groupby("PLAYER_NAME"):
-            grp = grp.reset_index(drop=True)
-            feats  = grp[FEATURE_COLS].values.astype(np.float32)
-            labels = grp["LABEL"].values.astype(np.int64)   # 0 or 1
-
-            # z-score normalise per player sequence
-            mean = feats.mean(axis=0, keepdims=True)
-            std  = feats.std(axis=0, keepdims=True) + 1e-8
-            feats = (feats - mean) / std
-
-            for i in range(window_size, len(grp)):
-                window_x = feats[i - window_size : i]        # (W, F)
-                label    = int(labels[i])
-                self.samples.append((window_x, label))
+        for _, row in df.iterrows():
+            window_x = np.zeros((window_size, len(FEATURE_COLS)), dtype=np.float32)
+            for t in range(window_size):
+                for j, feat in enumerate(FEATURE_COLS):
+                    window_x[t, j] = float(row.get(f"{feat}_t{t}", 0.0))
+            self.samples.append((window_x, int(row["LABEL"])))
 
     def __len__(self):
         return len(self.samples)
@@ -171,7 +167,7 @@ def train_lstm(
 ) -> LSTMBranch:
     """
     Trains the LSTM branch and saves checkpoints.
-    Defaults to PROCESSED_DIR/train.csv and val.csv.
+    Reads from PROCESSED_DIR/train.csv and val.csv (built by run_processing.py).
     Returns the trained model.
     """
     train_path = train_path or os.path.join(PROCESSED_DIR, "train.csv")
