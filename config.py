@@ -120,12 +120,12 @@ TEST_END    = "2026-04-06"
 WINDOW_SIZE   = 5      # rolling games used as input sequence
 HIDDEN_SIZE   = 64
 NUM_LAYERS    = 1
-DROPOUT       = 0.45   # increased from 0.3 to combat overfitting
+DROPOUT       = 0.35   # mild regularisation — 0.45 was too aggressive
 LEARNING_RATE = 1e-3
-WEIGHT_DECAY  = 1e-4   # L2 regularisation for Adam
+WEIGHT_DECAY  = 5e-5   # light L2 — prevents blow-up without slowing early learning
 BATCH_SIZE    = 32
-EPOCHS        = 60     # extra headroom; early stopping will cut short
-PATIENCE      = 10     # early-stop if val_loss doesn't improve for N epochs
+EPOCHS        = 60
+PATIENCE      = 7      # stop if val_acc hasn't improved for N epochs
 
 # --- Feature columns (must match build_sequences.py) ---
 FEATURE_COLS = ["PTS", "TS_PCT", "EFG_PCT", "USG_PCT", "OPP_DRTG", "MIN"]
