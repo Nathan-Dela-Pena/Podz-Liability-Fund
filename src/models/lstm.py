@@ -38,8 +38,10 @@ from config import (
     NUM_LAYERS,
     DROPOUT,
     LEARNING_RATE,
+    WEIGHT_DECAY,
     BATCH_SIZE,
     EPOCHS,
+    PATIENCE,
     PROCESSED_DIR,
     CHECKPOINTS_DIR,
     TRAIN_START, TRAIN_END,
@@ -181,11 +183,17 @@ def train_lstm(
     val_loader   = _make_loader(val_path,   shuffle=False, weighted=False)
 
     model     = LSTMBranch().to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
+    optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE,
+                                 weight_decay=WEIGHT_DECAY)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode="min", factor=0.5, patience=5, verbose=True
+    )
     criterion = nn.BCEWithLogitsLoss()
 
     os.makedirs(CHECKPOINTS_DIR, exist_ok=True)
-    best_val_acc = 0.0
+    best_val_loss = float("inf")
+    best_val_acc  = 0.0
+    patience_ctr  = 0
 
     for epoch in range(1, EPOCHS + 1):
         # --- train ---
@@ -197,6 +205,7 @@ def train_lstm(
             logit, _ = model(x)
             loss = criterion(logit.squeeze(1), y)
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
             train_loss += loss.item() * len(x)
         train_loss /= len(train_loader.dataset)
@@ -219,6 +228,8 @@ def train_lstm(
         val_acc  = accuracy_score(all_labels, all_preds)
         val_f1   = f1_score(all_labels, all_preds, average="macro", zero_division=0)
 
+        scheduler.step(val_loss)
+
         print(
             f"  Epoch {epoch:>3}/{EPOCHS} | "
             f"train_loss={train_loss:.4f} | "
@@ -227,13 +238,21 @@ def train_lstm(
             f"val_f1={val_f1:.4f}"
         )
 
-        if val_acc > best_val_acc:
-            best_val_acc = val_acc
+        # Checkpoint on best val_loss (more stable than val_acc with small val set)
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            best_val_acc  = val_acc
+            patience_ctr  = 0
             ckpt = os.path.join(CHECKPOINTS_DIR, "lstm_best.pt")
             torch.save(model.state_dict(), ckpt)
-            print(f"    [checkpoint] saved (val_acc={val_acc:.4f})")
+            print(f"    [checkpoint] saved (val_loss={val_loss:.4f}, val_acc={val_acc:.4f})")
+        else:
+            patience_ctr += 1
+            if patience_ctr >= PATIENCE:
+                print(f"\n  [early stop] no val_loss improvement for {PATIENCE} epochs")
+                break
 
-    print(f"\n[lstm] best val accuracy: {best_val_acc:.4f}")
+    print(f"\n[lstm] best val loss: {best_val_loss:.4f}  |  best val accuracy: {best_val_acc:.4f}")
     return model
 
 
