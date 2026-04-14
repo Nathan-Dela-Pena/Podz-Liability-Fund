@@ -147,9 +147,27 @@ The 192-dim hidden vector is the CNN branch output passed to the fusion model.
 
 ---
 
-### Fusion Model *(Week 6 — upcoming)*
+### Fusion Model
 
-Concatenates LSTM hidden (128) + CNN hidden (192) → dense layers → sigmoid output. Adam optimizer learns effective branch weighting end-to-end.
+```bash
+python scripts/run_fusion.py   # trains → checkpoints/fusion_best.pt
+```
+
+**Architecture:**
+```
+LSTM hidden  (128) → Linear(128→128)  ─┐
+                                        ├─ weighted sum (128) → LayerNorm
+CNN  hidden  (192) → Linear(192→128)  ─┘
+  → Linear(128→64) → ReLU → Dropout(0.3) → Linear(64→1)
+```
+
+Branch contributions are controlled by a learnable softmax weight pair initialised to favour LSTM (~61 %) over CNN (~39 %). The Adam optimizer adjusts these weights end-to-end; `w_lstm` and `w_cnn` are printed after every epoch.
+
+**Optimizer:** Adam with two learning rates — fusion head `lr=1e-3`, branch encoders `lr=1e-4` (gentle fine-tune).
+
+If CNN pose/frame data is absent for a sample, the CNN input is zeroed out so the model can still train on stats-only samples and the branch weights reflect the true signal contribution.
+
+**Success criterion:** ≥ 58% test accuracy, ≥ 3pp over the logistic regression baseline (49.9%).
 
 ---
 
