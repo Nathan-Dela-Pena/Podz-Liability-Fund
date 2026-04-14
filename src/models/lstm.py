@@ -186,14 +186,13 @@ def train_lstm(
     optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE,
                                  weight_decay=WEIGHT_DECAY)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode="min", factor=0.5, patience=5, verbose=True
+        optimizer, mode="min", factor=0.5, patience=5
     )
     criterion = nn.BCEWithLogitsLoss()
 
     os.makedirs(CHECKPOINTS_DIR, exist_ok=True)
-    best_val_loss = float("inf")
-    best_val_acc  = 0.0
-    patience_ctr  = 0
+    best_val_acc = 0.0
+    patience_ctr = 0
 
     for epoch in range(1, EPOCHS + 1):
         # --- train ---
@@ -238,21 +237,20 @@ def train_lstm(
             f"val_f1={val_f1:.4f}"
         )
 
-        # Checkpoint on best val_loss (more stable than val_acc with small val set)
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
-            best_val_acc  = val_acc
-            patience_ctr  = 0
+        # Checkpoint on best val_acc — primary metric we care about
+        if val_acc > best_val_acc:
+            best_val_acc = val_acc
+            patience_ctr = 0
             ckpt = os.path.join(CHECKPOINTS_DIR, "lstm_best.pt")
             torch.save(model.state_dict(), ckpt)
-            print(f"    [checkpoint] saved (val_loss={val_loss:.4f}, val_acc={val_acc:.4f})")
+            print(f"    [checkpoint] saved (val_acc={val_acc:.4f})")
         else:
             patience_ctr += 1
             if patience_ctr >= PATIENCE:
-                print(f"\n  [early stop] no val_loss improvement for {PATIENCE} epochs")
+                print(f"\n  [early stop] val_acc hasn't improved for {PATIENCE} epochs")
                 break
 
-    print(f"\n[lstm] best val loss: {best_val_loss:.4f}  |  best val accuracy: {best_val_acc:.4f}")
+    print(f"\n[lstm] best val accuracy: {best_val_acc:.4f}")
     return model
 
 
