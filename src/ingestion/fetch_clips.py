@@ -284,4 +284,5 @@ def fetch_clips(
 
 
 if __name__ == "__main__":
-    fetch_clips()
+    # Current season only — all tracked players from config
+    fetch_clips(seasons=["2025-26"])
