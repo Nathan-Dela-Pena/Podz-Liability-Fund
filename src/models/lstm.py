@@ -38,8 +38,10 @@ from config import (
     NUM_LAYERS,
     DROPOUT,
     LEARNING_RATE,
+    WEIGHT_DECAY,
     BATCH_SIZE,
     EPOCHS,
+    PATIENCE,
     PROCESSED_DIR,
     CHECKPOINTS_DIR,
     TRAIN_START, TRAIN_END,
@@ -54,33 +56,29 @@ from config import (
 
 class PlayerSequenceDataset(Dataset):
     """
-    Loads the merged game-log + odds parquet from PROCESSED_DIR and builds
-    rolling windows of length WINDOW_SIZE for each player.
+    Loads train/val/test CSV produced by build_sequences.py.
+
+    Each row in that CSV is already one ready-to-use sample with flattened
+    window columns named {FEAT}_t0 … {FEAT}_t{W-1} (already z-score
+    normalised per player).  This class reshapes them back to
+    (WINDOW_SIZE, num_features) tensors.
 
     Each sample is:
-      x : (WINDOW_SIZE, num_features)  — normalized feature window
+      x : (WINDOW_SIZE, num_features)  — normalised feature window
       y : scalar 0/1                   — 0 = under, 1 = over
     """
 
     def __init__(self, csv_path: str, window_size: int = WINDOW_SIZE):
-        df = pd.read_csv(csv_path).sort_values(["PLAYER_NAME", "GAME_DATE"])
+        df = pd.read_csv(csv_path)
         self.window = window_size
         self.samples: list[tuple[np.ndarray, int]] = []
 
-        for player, grp in df.groupby("PLAYER_NAME"):
-            grp = grp.reset_index(drop=True)
-            feats  = grp[FEATURE_COLS].values.astype(np.float32)
-            labels = grp["LABEL"].values.astype(np.int64)   # 0 or 1
-
-            # z-score normalise per player sequence
-            mean = feats.mean(axis=0, keepdims=True)
-            std  = feats.std(axis=0, keepdims=True) + 1e-8
-            feats = (feats - mean) / std
-
-            for i in range(window_size, len(grp)):
-                window_x = feats[i - window_size : i]        # (W, F)
-                label    = int(labels[i])
-                self.samples.append((window_x, label))
+        for _, row in df.iterrows():
+            window_x = np.zeros((window_size, len(FEATURE_COLS)), dtype=np.float32)
+            for t in range(window_size):
+                for j, feat in enumerate(FEATURE_COLS):
+                    window_x[t, j] = float(row.get(f"{feat}_t{t}", 0.0))
+            self.samples.append((window_x, int(row["LABEL"])))
 
     def __len__(self):
         return len(self.samples)
@@ -171,7 +169,7 @@ def train_lstm(
 ) -> LSTMBranch:
     """
     Trains the LSTM branch and saves checkpoints.
-    Defaults to PROCESSED_DIR/train.csv and val.csv.
+    Reads from PROCESSED_DIR/train.csv and val.csv (built by run_processing.py).
     Returns the trained model.
     """
     train_path = train_path or os.path.join(PROCESSED_DIR, "train.csv")
@@ -185,11 +183,16 @@ def train_lstm(
     val_loader   = _make_loader(val_path,   shuffle=False, weighted=False)
 
     model     = LSTMBranch().to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
+    optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE,
+                                 weight_decay=WEIGHT_DECAY)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode="min", factor=0.5, patience=5
+    )
     criterion = nn.BCEWithLogitsLoss()
 
     os.makedirs(CHECKPOINTS_DIR, exist_ok=True)
     best_val_acc = 0.0
+    patience_ctr = 0
 
     for epoch in range(1, EPOCHS + 1):
         # --- train ---
@@ -201,6 +204,7 @@ def train_lstm(
             logit, _ = model(x)
             loss = criterion(logit.squeeze(1), y)
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
             train_loss += loss.item() * len(x)
         train_loss /= len(train_loader.dataset)
@@ -223,6 +227,8 @@ def train_lstm(
         val_acc  = accuracy_score(all_labels, all_preds)
         val_f1   = f1_score(all_labels, all_preds, average="macro", zero_division=0)
 
+        scheduler.step(val_loss)
+
         print(
             f"  Epoch {epoch:>3}/{EPOCHS} | "
             f"train_loss={train_loss:.4f} | "
@@ -231,11 +237,18 @@ def train_lstm(
             f"val_f1={val_f1:.4f}"
         )
 
+        # Checkpoint on best val_acc — primary metric we care about
         if val_acc > best_val_acc:
             best_val_acc = val_acc
+            patience_ctr = 0
             ckpt = os.path.join(CHECKPOINTS_DIR, "lstm_best.pt")
             torch.save(model.state_dict(), ckpt)
             print(f"    [checkpoint] saved (val_acc={val_acc:.4f})")
+        else:
+            patience_ctr += 1
+            if patience_ctr >= PATIENCE:
+                print(f"\n  [early stop] val_acc hasn't improved for {PATIENCE} epochs")
+                break
 
     print(f"\n[lstm] best val accuracy: {best_val_acc:.4f}")
     return model

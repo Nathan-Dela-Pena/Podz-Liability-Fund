@@ -62,32 +62,23 @@ def _run_split(model: LSTMBranch, csv_path: str, device: str):
     """Returns (all_labels, all_preds, all_probs, player_names) arrays."""
     ds = PlayerSequenceDataset(csv_path, window_size=WINDOW_SIZE)
 
+    # Player names are in the same row order as the CSV (PlayerSequenceDataset
+    # iterates df.iterrows() without sorting, so read PLAYER_NAME column directly)
+    player_names: list[str] = pd.read_csv(csv_path)["PLAYER_NAME"].tolist()
+
     all_labels: list[int] = []
     all_preds:  list[int] = []
     all_probs:  list[float] = []
-    player_names: list[str] = []
-
-    # Collect player names in same order as dataset samples.
-    # PlayerSequenceDataset stores samples as (window_x, label).
-    # We need player names for per-player breakdown; rebuild from parquet.
-    df = pd.read_csv(csv_path).sort_values(["PLAYER_NAME", "GAME_DATE"])
-    player_seq: list[str] = []
-    for player, grp in df.groupby("PLAYER_NAME"):
-        n_games = len(grp)
-        n_samples = n_games - WINDOW_SIZE
-        if n_samples > 0:
-            player_seq.extend([player] * n_samples)
 
     with torch.no_grad():
         for idx, (x, y) in enumerate(ds):
-            x = x.unsqueeze(0).to(device)           # (1, W, F)
+            x = x.unsqueeze(0).to(device)
             logit, _ = model(x)
             prob = torch.sigmoid(logit).item()
             pred = int(prob >= 0.5)
             all_labels.append(int(y.item()))
             all_preds.append(pred)
             all_probs.append(prob)
-            player_names.append(player_seq[idx] if idx < len(player_seq) else "unknown")
 
     return (
         np.array(all_labels),
