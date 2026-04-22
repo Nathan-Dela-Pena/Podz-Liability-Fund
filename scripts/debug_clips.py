@@ -30,46 +30,32 @@ if not game_ids:
 
 game_id = game_ids[0]
 
-print(f"\n=== Step 2: Fetch play-by-play for game {game_id} ===")
-data = _get(PBP_ENDPOINT, {"GameID": game_id, "StartPeriod": 1, "EndPeriod": 10})
-if data is None:
-    print("Play-by-play returned None — API blocked or timed out")
-    sys.exit(1)
+print(f"\n=== Step 2: Fetch play-by-play via nba_api for game {game_id} ===")
+try:
+    from nba_api.stats.endpoints import PlayByPlayV3
+    pbp  = PlayByPlayV3(game_id=game_id, start_period=1, end_period=10)
+    df   = pbp.get_data_frames()[0]
+    print(f"Total events: {len(df)}")
 
-result_sets = data.get("resultSets", [])
-if not result_sets:
-    print("No resultSets in response")
-    print("Keys in response:", list(data.keys()))
-    sys.exit(1)
+    if not df.empty:
+        print(f"Looking for player_id={PLAYER_ID}")
+        curry_df = df[df["personId"] == PLAYER_ID]
+        print(f"Events where personId == {PLAYER_ID}: {len(curry_df)}")
 
-headers = result_sets[0]["headers"]
-rows    = result_sets[0]["rowSet"]
-print(f"Columns: {headers}")
-print(f"Total events: {len(rows)}")
+        fga_df = curry_df[curry_df["isFieldGoal"] == 1]
+        print(f"FGA events (isFieldGoal==1) for Curry: {len(fga_df)}")
 
-if rows:
-    print(f"\nFirst row: {rows[0]}")
-    print(f"\nSample EVENTMSGTYPE values: {list(set(r[headers.index('EVENTMSGTYPE')] for r in rows[:50]))}")
-    print(f"Sample PLAYER1_ID values:   {list(set(r[headers.index('PLAYER1_ID')] for r in rows[:50]))}")
-    print(f"Looking for player_id={PLAYER_ID} (type={type(PLAYER_ID).__name__})")
-
-    # Check if any events match Curry
-    curry_events = [r for r in rows if r[headers.index("PLAYER1_ID")] == PLAYER_ID]
-    print(f"\nEvents where PLAYER1_ID == {PLAYER_ID}: {len(curry_events)}")
-
-    fga_events = [r for r in rows
-                  if r[headers.index("PLAYER1_ID")] == PLAYER_ID
-                  and r[headers.index("EVENTMSGTYPE")] in {1, 2}]
-    print(f"FGA events (type 1 or 2) for Curry: {len(fga_events)}")
-
-    if fga_events:
-        event_id = str(fga_events[0][headers.index("EVENTNUM")])
-        print(f"\n=== Step 3: Fetch video URL for event {event_id} ===")
-        vdata = _get(VIDEO_ENDPOINT, {"GameEventID": event_id, "GameID": game_id})
-        if vdata is None:
-            print("Video endpoint returned None")
-        else:
-            print("Video response keys:", list(vdata.keys()))
-            result = vdata.get("resultSets", {})
-            print("resultSets type:", type(result))
-            print("resultSets content:", result)
+        if not fga_df.empty:
+            event_id = str(fga_df.iloc[0]["actionNumber"])
+            print(f"\n=== Step 3: Fetch video URL for event {event_id} ===")
+            from src.ingestion.fetch_clips import _get, VIDEO_ENDPOINT
+            vdata = _get(VIDEO_ENDPOINT, {"GameEventID": event_id, "GameID": game_id})
+            if vdata is None:
+                print("Video endpoint returned None")
+            else:
+                print("Video response keys:", list(vdata.keys()))
+                result = vdata.get("resultSets", {})
+                print("resultSets type:", type(result))
+                print("resultSets content:", result)
+except Exception as exc:
+    print(f"PlayByPlayV3 failed: {exc}")
