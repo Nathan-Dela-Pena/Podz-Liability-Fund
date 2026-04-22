@@ -187,12 +187,24 @@ def _fetch_video_url(game_id: str, event_id: str) -> str | None:
     return entry.get("lurl") or entry.get("murl") or entry.get("surl") or None
 
 
+CDN_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/122.0.0.0 Safari/537.36"
+    ),
+    "Referer": "https://www.nba.com/",
+}
+
+
 def _download_clip(url: str, dest: Path) -> bool:
     """
     Streams an mp4 from *url* to *dest*.  Returns True on success.
+    Uses plain CDN headers — not the stats.nba.com headers — to avoid
+    redirect loops and connection drops from videos.nba.com.
     """
     try:
-        with requests.get(url, headers=HEADERS, stream=True, timeout=60) as resp:
+        with requests.get(url, headers=CDN_HEADERS, stream=True, timeout=60) as resp:
             resp.raise_for_status()
             dest.parent.mkdir(parents=True, exist_ok=True)
             with open(dest, "wb") as fh:
