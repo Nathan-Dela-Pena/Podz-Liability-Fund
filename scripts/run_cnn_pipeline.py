@@ -55,7 +55,7 @@ def fetch_and_extract(
     """
     from src.ingestion.fetch_clips import (
         _fetch_game_ids, _fetch_fga_events, _fetch_video_url,
-        _player_slug, SLEEP_BETWEEN_REQUESTS, HEADERS,
+        _player_slug, SLEEP_BETWEEN_REQUESTS, CDN_HEADERS,
     )
     from src.processing.extract_frames import extract_frames_from_clip
     import requests
@@ -102,7 +102,7 @@ def fetch_and_extract(
                         with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
                             tmp_path = Path(tmp.name)
 
-                        with requests.get(video_url, headers=HEADERS,
+                        with requests.get(video_url, headers=CDN_HEADERS,
                                           stream=True, timeout=60) as resp:
                             resp.raise_for_status()
                             with open(tmp_path, "wb") as fh:
