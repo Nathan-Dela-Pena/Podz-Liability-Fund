@@ -134,7 +134,9 @@ class CNNPoseDataset(Dataset):
         self.pose_root   = Path(pose_root   or POSE_DIR)
 
         labels_df = pd.read_csv(labels_csv)
-        # Expect columns: PLAYER_NAME, GAME_ID, LABEL  (GAME_ID may be int or str)
+        # GAME_ID may not exist in the stats CSV — fall back to GAME_DATE as key
+        if "GAME_ID" not in labels_df.columns:
+            labels_df["GAME_ID"] = labels_df.get("GAME_DATE", "").astype(str)
         labels_df["GAME_ID"] = labels_df["GAME_ID"].astype(str).str.zfill(10)
 
         self.samples: list[tuple[Path, np.ndarray, int]] = []
