@@ -169,12 +169,23 @@ if __name__ == "__main__":
     else:
         log.info("Skipping fetch (--skip-fetch)")
 
-    if not args.skip_pose:
-        run_pose()
-    else:
-        log.info("Skipping pose extraction (--skip-pose)")
+    # Check frames exist before attempting pose / training
+    frames_root = Path(FRAMES_DIR)
+    has_frames  = frames_root.exists() and any(frames_root.rglob("*.jpg"))
 
-    if not args.skip_train:
-        run_cnn_training()
+    if not has_frames:
+        log.warning(
+            "No frames found in %s — skipping pose extraction and CNN training.\n"
+            "  Fix clip fetching first, then re-run with --skip-fetch.",
+            FRAMES_DIR,
+        )
     else:
-        log.info("Skipping CNN training (--skip-train)")
+        if not args.skip_pose:
+            run_pose()
+        else:
+            log.info("Skipping pose extraction (--skip-pose)")
+
+        if not args.skip_train:
+            run_cnn_training()
+        else:
+            log.info("Skipping CNN training (--skip-train)")
