@@ -204,13 +204,17 @@ def _download_clip(url: str, dest: Path) -> bool:
     redirect loops and connection drops from videos.nba.com.
     """
     try:
-        with requests.get(url, headers=CDN_HEADERS, stream=True, timeout=60) as resp:
+        with requests.get(url, headers=CDN_HEADERS, stream=True, timeout=60,
+                          allow_redirects=True, max_redirects=10) as resp:
             resp.raise_for_status()
             dest.parent.mkdir(parents=True, exist_ok=True)
             with open(dest, "wb") as fh:
                 for chunk in resp.iter_content(chunk_size=1 << 16):
                     fh.write(chunk)
         return True
+    except requests.exceptions.TooManyRedirects:
+        log.debug("Too many redirects for %s — no video available", url)
+        return False
     except requests.exceptions.RequestException as exc:
         log.warning("Download failed for %s: %s", url, exc)
         if dest.exists():
