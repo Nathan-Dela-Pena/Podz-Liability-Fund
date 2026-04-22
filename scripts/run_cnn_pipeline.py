@@ -103,7 +103,8 @@ def fetch_and_extract(
                             tmp_path = Path(tmp.name)
 
                         with requests.get(video_url, headers=CDN_HEADERS,
-                                          stream=True, timeout=60) as resp:
+                                          stream=True, timeout=60,
+                                          allow_redirects=True, max_redirects=10) as resp:
                             resp.raise_for_status()
                             with open(tmp_path, "wb") as fh:
                                 for chunk in resp.iter_content(chunk_size=1 << 16):
