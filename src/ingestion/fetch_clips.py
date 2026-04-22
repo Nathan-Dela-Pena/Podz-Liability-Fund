@@ -204,8 +204,9 @@ def _download_clip(url: str, dest: Path) -> bool:
     redirect loops and connection drops from videos.nba.com.
     """
     try:
-        with requests.get(url, headers=CDN_HEADERS, stream=True, timeout=60,
-                          allow_redirects=True, max_redirects=10) as resp:
+        session = requests.Session()
+        session.max_redirects = 10
+        with session.get(url, headers=CDN_HEADERS, stream=True, timeout=60) as resp:
             resp.raise_for_status()
             dest.parent.mkdir(parents=True, exist_ok=True)
             with open(dest, "wb") as fh:
