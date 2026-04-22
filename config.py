@@ -136,6 +136,11 @@ RAW_ODDS_DIR     = f"{DATA_DIR}/raw/odds"
 RAW_GAMELOGS_DIR = f"{DATA_DIR}/raw/game_logs"
 RAW_CLIPS_DIR    = f"{DATA_DIR}/raw/clips"
 PROCESSED_DIR    = f"{DATA_DIR}/processed"
-FRAMES_DIR       = f"{DATA_DIR}/frames"
-POSE_DIR         = f"{DATA_DIR}/pose"
 CHECKPOINTS_DIR  = "checkpoints"
+
+# Frames and pose CSVs are written directly to Google Drive so they are
+# backed up automatically without occupying local disk space.
+# Google Drive desktop app mounts at ~/Google Drive/My Drive/ on macOS.
+_GDRIVE = os.path.expanduser("~/Google Drive/My Drive/podz-liability-fund")
+FRAMES_DIR = f"{_GDRIVE}/frames"
+POSE_DIR   = f"{_GDRIVE}/pose"
