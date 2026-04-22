@@ -140,37 +140,29 @@ def _fetch_game_ids(player_id: int, season: str) -> list[str]:
 
 def _fetch_fga_events(game_id: str, player_id: int) -> list[tuple[str, str]]:
     """
-    Pulls play-by-play for *game_id* and returns (game_id, event_id) tuples
-    for every field-goal attempt by *player_id*.
+    Pulls play-by-play for *game_id* using nba_api (handles headers internally)
+    and returns (game_id, event_id) tuples for every FGA by *player_id*.
+    Uses PlayByPlayV3 — V2 was deprecated and returns empty JSON.
     """
-    data = _get(PBP_ENDPOINT, {"GameID": game_id, "StartPeriod": 1, "EndPeriod": 10})
-    time.sleep(SLEEP_BETWEEN_REQUESTS)
-    if data is None:
-        return []
-
-    result_sets = data.get("resultSets", [])
-    if not result_sets:
-        return []
-
-    headers = result_sets[0]["headers"]
-    rows    = result_sets[0]["rowSet"]
-
     try:
-        event_id_idx   = headers.index("EVENTNUM")
-        event_type_idx = headers.index("EVENTMSGTYPE")
-        p1_id_idx      = headers.index("PLAYER1_ID")
-    except ValueError as exc:
-        log.warning("Unexpected PBP schema for game %s: %s", game_id, exc)
+        from nba_api.stats.endpoints import PlayByPlayV3
+        pbp = PlayByPlayV3(game_id=game_id, start_period=1, end_period=10,
+                           timeout=TIMEOUT)
+        df = pbp.get_data_frames()[0]
+        time.sleep(SLEEP_BETWEEN_REQUESTS)
+    except Exception as exc:
+        log.warning("PlayByPlayV3 failed for game %s: %s", game_id, exc)
         return []
 
-    events = []
-    for row in rows:
-        if (
-            row[event_type_idx] in FGA_EVENT_TYPES
-            and row[p1_id_idx] == player_id
-        ):
-            events.append((game_id, str(row[event_id_idx])))
-    return events
+    if df.empty:
+        return []
+
+    # V3 schema: isFieldGoal == 1 for all FGA; personId is the shooter
+    fga = df[
+        (df["isFieldGoal"] == 1) &
+        (df["personId"] == player_id)
+    ]
+    return [(game_id, str(eid)) for eid in fga["actionNumber"].tolist()]
 
 
 def _fetch_video_url(game_id: str, event_id: str) -> str | None:
@@ -183,15 +175,16 @@ def _fetch_video_url(game_id: str, event_id: str) -> str | None:
     if data is None:
         return None
 
-    # Response structure: {"resultSets": {"Meta": ..., "video": {"Location": [...]}}}
+    # Response structure:
+    # {"resultSets": {"Meta": {"videoUrls": [{"lurl": "..._1280x720.mp4", "murl": ..., "surl": ...}]}}}
     result_sets = data.get("resultSets", {})
-    video_info  = result_sets.get("video", {})
-    locations   = video_info.get("Location", [])
+    video_urls  = result_sets.get("Meta", {}).get("videoUrls", [])
 
-    if not locations:
+    if not video_urls:
         return None
-    # Prefer the first (highest quality) location
-    return locations[0] if isinstance(locations[0], str) else None
+    # Prefer highest quality (lurl=1280x720), fall back to medium then small
+    entry = video_urls[0]
+    return entry.get("lurl") or entry.get("murl") or entry.get("surl") or None
 
 
 def _download_clip(url: str, dest: Path) -> bool:
