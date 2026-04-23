@@ -310,12 +310,139 @@ class CNNBranch(nn.Module):
 # DataLoader factory
 # ---------------------------------------------------------------------------
 
+class YouTubePoseDataset(Dataset):
+    """
+    Dataset for YouTube highlight clips (frame dirs named yt_{season}_{video_id}/).
+
+    Since YouTube clips have no game IDs, labels cannot be joined per-game.
+    Instead we use weak supervision: for each player, we sample labels from
+    their historical label distribution in train.csv.  This preserves the
+    per-player OVER/UNDER ratio so the model sees realistic label diversity
+    rather than a constant per-player label.
+
+    Parameters
+    ----------
+    labels_csv  : path to train.csv — used to build per-player label pools
+    frames_root : root of per-player frame directories (default: FRAMES_DIR)
+    pose_root   : root of per-player pose CSVs (default: POSE_DIR)
+    transform   : torchvision transform applied to each frame image
+    seed        : RNG seed for reproducible label assignment
+    """
+
+    def __init__(
+        self,
+        labels_csv:  str,
+        frames_root: str | None = None,
+        pose_root:   str | None = None,
+        transform:   transforms.Compose = _frame_transform,
+        seed:        int = 42,
+    ):
+        self.transform   = transform
+        self.frames_root = Path(frames_root or FRAMES_DIR)
+        self.pose_root   = Path(pose_root   or POSE_DIR)
+        self.rng         = np.random.default_rng(seed)
+
+        labels_df = pd.read_csv(labels_csv)
+        self.samples: list[tuple[Path, np.ndarray, int]] = []
+        self._build_samples(labels_df)
+
+    def _build_samples(self, labels_df: pd.DataFrame) -> None:
+        # Per-player label pool from train.csv
+        player_label_pool: dict[str, list[int]] = {}
+        for player_name in PLAYERS:
+            slug = _player_slug(player_name)
+            rows = labels_df[labels_df["PLAYER_NAME"] == player_name]["LABEL"].tolist()
+            player_label_pool[slug] = [int(x) for x in rows] if rows else [0, 1]
+
+        for player_name in PLAYERS:
+            slug             = _player_slug(player_name)
+            player_frame_dir = self.frames_root / slug
+            pose_csv         = self.pose_root   / f"{slug}.csv"
+
+            if not player_frame_dir.exists() or not pose_csv.exists():
+                continue
+
+            pose_df = pd.read_csv(pose_csv)
+            # YouTube rows have game_id == "yt"
+            yt_rows = pose_df[pose_df["game_id"].astype(str) == "yt"]
+            if yt_rows.empty:
+                continue
+
+            pose_lookup = CNNPoseDataset._build_pose_lookup(
+                yt_rows.assign(game_id="yt")
+            )
+            label_pool = player_label_pool.get(slug, [0, 1])
+
+            for _, row in yt_rows.iterrows():
+                event_id = str(row["event_id"])
+                clip_dir = player_frame_dir / f"yt_{event_id}"
+
+                if not clip_dir.exists():
+                    continue
+
+                frame_path = CNNPoseDataset._pick_middle_frame(clip_dir)
+                if frame_path is None:
+                    continue
+
+                pose_vec = pose_lookup.get(("yt", event_id))
+                if pose_vec is None:
+                    continue
+
+                label = int(self.rng.choice(label_pool))
+                self.samples.append((frame_path, pose_vec, label))
+
+    def __len__(self) -> int:
+        return len(self.samples)
+
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        frame_path, pose_vec, label = self.samples[idx]
+        img          = Image.open(frame_path).convert("RGB")
+        frame_tensor = self.transform(img)
+        pose_tensor  = torch.tensor(pose_vec, dtype=torch.float32)
+        label_tensor = torch.tensor(label,    dtype=torch.float32)
+        return frame_tensor, pose_tensor, label_tensor
+
+    def class_weights(self) -> torch.Tensor:
+        labels = np.array([s[2] for s in self.samples])
+        counts = np.bincount(labels.astype(int))
+        weight_per_class = 1.0 / counts
+        return torch.tensor(
+            [weight_per_class[int(l)] for l in labels], dtype=torch.float32
+        )
+
+
 def _make_loader(
     labels_csv: str,
     shuffle:    bool,
     weighted:   bool,
 ) -> DataLoader:
-    ds = CNNPoseDataset(labels_csv)
+    # Use YouTubePoseDataset when YouTube frames are present (game_id="yt" rows
+    # in pose CSVs), otherwise fall back to the game-ID-keyed CNNPoseDataset.
+    pose_root = Path(POSE_DIR)
+    use_youtube = False
+    if pose_root.exists():
+        for csv in pose_root.glob("*.csv"):
+            try:
+                df = pd.read_csv(csv, usecols=["game_id"], nrows=5)
+                if (df["game_id"].astype(str) == "yt").any():
+                    use_youtube = True
+                    break
+            except Exception:
+                pass
+
+    ds: Dataset
+    if use_youtube:
+        ds = YouTubePoseDataset(labels_csv)
+    else:
+        ds = CNNPoseDataset(labels_csv)
+
+    if len(ds) == 0:
+        raise RuntimeError(
+            f"Dataset is empty — no (frame, pose, label) triples found.\n"
+            f"  frames_root={FRAMES_DIR}\n  pose_root={POSE_DIR}\n"
+            f"  labels_csv={labels_csv}"
+        )
+
     if weighted:
         weights = ds.class_weights()
         sampler = WeightedRandomSampler(weights, len(weights))
