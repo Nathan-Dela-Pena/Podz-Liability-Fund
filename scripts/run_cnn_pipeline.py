@@ -93,7 +93,7 @@ if __name__ == "__main__":
                         help="Skip CNN training")
     parser.add_argument("--players", nargs="+", default=None,
                         help="Subset of players (default: all)")
-    parser.add_argument("--seasons", nargs="+", default=["2024-25", "2025-26"],
+    parser.add_argument("--seasons", nargs="+", default=["2025-26"],
                         help="Seasons to fetch highlights for")
     parser.add_argument("--videos-per-query", type=int, default=3,
                         help="YouTube results to download per search query (default: 3)")

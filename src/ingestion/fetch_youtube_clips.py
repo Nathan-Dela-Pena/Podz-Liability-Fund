@@ -46,7 +46,7 @@ log = logging.getLogger(__name__)
 
 VIDEOS_PER_QUERY: int   = 3      # YouTube search results to download per query
 SAMPLE_EVERY:     int   = 30     # keep 1 frame every N (highlight vids are longer)
-MAX_DURATION:     int   = 600    # skip videos longer than 10 min (avoid full games)
+MAX_DURATION:     int   = 900    # skip videos longer than 15 min (avoid full games)
 MIN_DURATION:     int   = 30     # skip very short clips (<30 s)
 SLEEP_BETWEEN:    float = 2.0    # seconds between yt-dlp calls
 
