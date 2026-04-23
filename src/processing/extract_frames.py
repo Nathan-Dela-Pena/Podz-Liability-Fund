@@ -23,8 +23,20 @@ import logging
 from pathlib import Path
 
 import cv2
+import numpy as np
 
 from config import FRAMES_DIR, RAW_CLIPS_DIR
+
+
+def is_placeholder_frame(frame: np.ndarray) -> bool:
+    """
+    Returns True if *frame* is an NBA 'Video Not Available' placeholder.
+    These screens are ~82% NBA blue (HSV hue 100-130).
+    """
+    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+    blue_mask = cv2.inRange(hsv, (100, 50, 50), (130, 255, 255))
+    blue_pct = blue_mask.sum() / (255.0 * frame.shape[0] * frame.shape[1])
+    return blue_pct > 0.5
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -78,9 +90,10 @@ def extract_frames_from_clip(
             break
 
         if frame_idx % sample_every == 0:
-            dest = out_dir / f"frame_{written:04d}.jpg"
-            cv2.imwrite(str(dest), frame)
-            written += 1
+            if not is_placeholder_frame(frame):
+                dest = out_dir / f"frame_{written:04d}.jpg"
+                cv2.imwrite(str(dest), frame)
+                written += 1
 
         frame_idx += 1
 
