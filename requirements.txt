@@ -11,3 +11,5 @@ scikit-learn
 matplotlib
 seaborn
 tqdmyt-dlp==2026.3.17
+ultralytics==8.4.41
+ultralytics-thop==2.0.18

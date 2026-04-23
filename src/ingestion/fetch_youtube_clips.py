@@ -27,6 +27,7 @@ Usage
 """
 
 import argparse
+import json
 import logging
 import subprocess
 import tempfile
@@ -143,6 +144,24 @@ def _yt_search_and_download(
     return sorted(out_dir.glob("*.mp4")) + sorted(out_dir.glob("*.webm"))
 
 
+CHECKPOINT_FILE = Path("logs/yt_checkpoint.json")
+
+
+def _load_checkpoint() -> set[str]:
+    """Returns set of player slugs already fully processed."""
+    if CHECKPOINT_FILE.exists():
+        try:
+            return set(json.loads(CHECKPOINT_FILE.read_text()).get("done", []))
+        except Exception:
+            pass
+    return set()
+
+
+def _save_checkpoint(done: set[str]) -> None:
+    CHECKPOINT_FILE.parent.mkdir(parents=True, exist_ok=True)
+    CHECKPOINT_FILE.write_text(json.dumps({"done": sorted(done)}, indent=2))
+
+
 def fetch_youtube_frames(
     players: list[str] | None = None,
     seasons: list[str] | None = None,
@@ -166,12 +185,18 @@ def fetch_youtube_frames(
     seasons     = seasons or SEASONS
     frames_root = Path(frames_root or FRAMES_DIR)
 
+    done_players  = _load_checkpoint()
     total_videos  = 0
     total_frames  = 0
 
     for name in players:
         slug      = _player_slug(name)
         player_dir = frames_root / slug
+
+        if slug in done_players:
+            log.info("=== %s — [checkpoint] already done, skipping ===", name)
+            continue
+
         log.info("=== %s ===", name)
 
         for season in seasons:
@@ -200,6 +225,11 @@ def fetch_youtube_frames(
                         total_frames += n
 
                 time.sleep(SLEEP_BETWEEN)
+
+        # Mark player complete in checkpoint
+        done_players.add(slug)
+        _save_checkpoint(done_players)
+        log.info("  [checkpoint] %s saved.", slug)
 
     log.info("Done. Videos processed: %d  Total frames: %d", total_videos, total_frames)
 
