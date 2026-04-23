@@ -79,6 +79,12 @@ def run_cnn_training() -> None:
     train_cnn()
 
 
+def run_fusion_training() -> None:
+    from src.models.fusion import train_fusion
+    log.info("=== Training fusion model ===")
+    train_fusion()
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
@@ -91,6 +97,8 @@ if __name__ == "__main__":
                         help="Skip pose extraction (CSVs already in Drive)")
     parser.add_argument("--skip-train", action="store_true",
                         help="Skip CNN training")
+    parser.add_argument("--skip-fusion", action="store_true",
+                        help="Skip fusion model training")
     parser.add_argument("--players", nargs="+", default=None,
                         help="Subset of players (default: all)")
     parser.add_argument("--seasons", nargs="+", default=["2025-26"],
@@ -130,3 +138,8 @@ if __name__ == "__main__":
             run_cnn_training()
         else:
             log.info("Skipping CNN training (--skip-train)")
+
+        if not args.skip_fusion:
+            run_fusion_training()
+        else:
+            log.info("Skipping fusion training (--skip-fusion)")
