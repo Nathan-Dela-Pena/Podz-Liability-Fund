@@ -10,4 +10,4 @@ opencv-python
 scikit-learn
 matplotlib
 seaborn
-tqdm
+tqdmyt-dlp==2026.3.17
