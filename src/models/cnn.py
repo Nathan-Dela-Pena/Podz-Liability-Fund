@@ -60,7 +60,7 @@ import pandas as pd
 import torch
 import torch.nn as nn
 from PIL import Image
-from sklearn.metrics import accuracy_score, f1_score
+from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
 from torch.utils.data import DataLoader, Dataset, WeightedRandomSampler
 from torchvision import models, transforms
 
@@ -485,15 +485,27 @@ def train_cnn(
         )
     print(f"[cnn] training on {device}")
 
+    # Class imbalance check
+    train_df   = pd.read_csv(train_path)
+    label_counts = train_df["LABEL"].value_counts().sort_index()
+    total = len(train_df)
+    print(f"[cnn] train label distribution — UNDER(0): {label_counts.get(0,0)} "
+          f"({label_counts.get(0,0)/total:.1%})  "
+          f"OVER(1): {label_counts.get(1,0)} ({label_counts.get(1,0)/total:.1%})")
+
     train_loader = _make_loader(train_path, shuffle=True,  weighted=True)
     val_loader   = _make_loader(val_path,   shuffle=False, weighted=False)
 
     model     = CNNBranch().to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
     criterion = nn.BCEWithLogitsLoss()
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode="min", factor=0.5, patience=5
+    )
 
     os.makedirs(CHECKPOINTS_DIR, exist_ok=True)
-    best_val_acc = 0.0
+    best_val_auc  = 0.0
+    patience_left = 10
 
     for epoch in range(1, EPOCHS + 1):
         # ── train ────────────────────────────────────────────────────────
@@ -505,13 +517,14 @@ def train_cnn(
             logit, _ = model(frames, poses)
             loss = criterion(logit.squeeze(1), labels)
             loss.backward()
+            nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
             train_loss += loss.item() * len(frames)
         train_loss /= len(train_loader.dataset)
 
         # ── validate ─────────────────────────────────────────────────────
         model.eval()
-        all_preds, all_labels = [], []
+        all_probs, all_preds, all_labels = [], [], []
         val_loss = 0.0
         with torch.no_grad():
             for frames, poses, labels in val_loader:
@@ -519,29 +532,45 @@ def train_cnn(
                 logit, _ = model(frames, poses)
                 loss = criterion(logit.squeeze(1), labels)
                 val_loss += loss.item() * len(frames)
-                preds = (torch.sigmoid(logit.squeeze(1)) >= 0.5).long()
+                probs = torch.sigmoid(logit.squeeze(1))
+                preds = (probs >= 0.5).long()
+                all_probs.extend(probs.cpu().tolist())
                 all_preds.extend(preds.cpu().tolist())
                 all_labels.extend(labels.cpu().long().tolist())
 
         val_loss /= len(val_loader.dataset)
-        val_acc  = accuracy_score(all_labels, all_preds)
-        val_f1   = f1_score(all_labels, all_preds, average="macro", zero_division=0)
+        scheduler.step(val_loss)
+
+        val_acc = accuracy_score(all_labels, all_preds)
+        val_f1  = f1_score(all_labels, all_preds, average="macro", zero_division=0)
+        # AUC requires both classes present in val set
+        try:
+            val_auc = roc_auc_score(all_labels, all_probs)
+        except ValueError:
+            val_auc = float("nan")
 
         print(
             f"  Epoch {epoch:>3}/{EPOCHS} | "
             f"train_loss={train_loss:.4f} | "
             f"val_loss={val_loss:.4f} | "
             f"val_acc={val_acc:.4f} | "
-            f"val_f1={val_f1:.4f}"
+            f"val_f1={val_f1:.4f} | "
+            f"val_auc={val_auc:.4f}"
         )
 
-        if val_acc > best_val_acc:
-            best_val_acc = val_acc
+        if val_auc > best_val_auc:
+            best_val_auc  = val_auc
+            patience_left = 10
             ckpt = os.path.join(CHECKPOINTS_DIR, "cnn_best.pt")
             torch.save(model.state_dict(), ckpt)
-            print(f"    [checkpoint] saved (val_acc={val_acc:.4f})")
+            print(f"    [checkpoint] saved (val_auc={val_auc:.4f})")
+        else:
+            patience_left -= 1
+            if patience_left == 0:
+                print(f"  Early stopping at epoch {epoch} (patience=10)")
+                break
 
-    print(f"\n[cnn] best val accuracy: {best_val_acc:.4f}")
+    print(f"\n[cnn] best val AUC: {best_val_auc:.4f}")
     model.cpu()
     return model
 
