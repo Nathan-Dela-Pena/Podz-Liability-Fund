@@ -2,206 +2,265 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Podz Liability Fund</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>8</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-    :root {
-      --bg:        #0d0f14;
-      --surface:   #161a23;
-      --surface2:  #1e2330;
-      --border:    #2a3045;
-      --text:      #e8eaf0;
-      --muted:     #7a8099;
-      --over:      #22c55e;
-      --under:     #ef4444;
-      --accent:    #6366f1;
-      --accent-dk: #4f52cc;
-      --radius:    14px;
-    }
-
     html, body {
-      height: 100%;
-      background: var(--bg);
-      color: var(--text);
+      width: 100%; height: 100%;
+      background: #000;
+      overflow: hidden;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
       -webkit-font-smoothing: antialiased;
     }
 
-    /* ── Layout ── */
-    .page {
-      min-height: 100%;
+    /* ── Stage ── */
+    #stage {
+      width: 100%; height: 100%;
       display: flex;
-      flex-direction: column;
       align-items: center;
-      padding: 24px 16px 48px;
-      gap: 24px;
+      justify-content: center;
     }
 
-    /* ── Header ── */
-    header {
-      text-align: center;
-      width: 100%;
-      max-width: 520px;
-    }
-    header h1 {
-      font-size: clamp(1.3rem, 5vw, 1.8rem);
-      font-weight: 700;
-      letter-spacing: -0.02em;
-      line-height: 1.2;
-    }
-    header p {
-      margin-top: 6px;
-      font-size: 0.85rem;
-      color: var(--muted);
-    }
-
-    /* ── 8-ball button ── */
-    .ball-wrap {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 12px;
-    }
-
+    /* ── Ball ── */
     .ball {
-      width: clamp(120px, 30vw, 160px);
-      height: clamp(120px, 30vw, 160px);
+      --sz: min(80vmin, 560px);
+      width:  var(--sz);
+      height: var(--sz);
       border-radius: 50%;
-      background: radial-gradient(circle at 35% 35%, #2a2a2a, #000 70%);
-      box-shadow:
-        0 0 0 2px #1a1a1a,
-        0 8px 32px rgba(0,0,0,0.7),
-        inset 0 -4px 12px rgba(255,255,255,0.04);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      user-select: none;
-      transition: transform 0.12s ease, box-shadow 0.12s ease;
       position: relative;
+      cursor: pointer;
       -webkit-tap-highlight-color: transparent;
-    }
+      user-select: none;
+      flex-shrink: 0;
 
-    .ball:active:not(.disabled) {
-      transform: scale(0.94);
+      /* Core sphere gradient */
+      background:
+        radial-gradient(circle at 32% 28%, rgba(255,255,255,0.18) 0%, transparent 45%),
+        radial-gradient(circle at 68% 72%, rgba(30,40,80,0.35) 0%, transparent 50%),
+        radial-gradient(circle at 50% 50%, #1a1a1a 0%, #000 65%);
+
+      /* Outer glow + ground shadow */
       box-shadow:
-        0 0 0 2px #1a1a1a,
-        0 4px 16px rgba(0,0,0,0.9),
-        inset 0 -4px 12px rgba(255,255,255,0.04);
+        0 0 0 1px rgba(80,120,255,0.12),
+        0 0 60px  rgba(60,90,255,0.10),
+        0 0 120px rgba(40,70,200,0.08),
+        0 calc(var(--sz) * 0.52) calc(var(--sz) * 0.18) rgba(0,0,0,0.8),
+        0 calc(var(--sz) * 0.50) calc(var(--sz) * 0.10) rgba(0,0,0,0.9);
+
+      transform-origin: center bottom;
+      transition: transform 0.12s ease;
     }
 
-    .ball.disabled {
-      cursor: not-allowed;
-      opacity: 0.55;
-    }
-
-    .ball.shake {
-      animation: shake 0.45s ease;
-    }
-
-    @keyframes shake {
-      0%   { transform: rotate(0deg)    translateX(0); }
-      15%  { transform: rotate(-8deg)   translateX(-6px); }
-      30%  { transform: rotate(6deg)    translateX(5px); }
-      45%  { transform: rotate(-5deg)   translateX(-4px); }
-      60%  { transform: rotate(4deg)    translateX(3px); }
-      75%  { transform: rotate(-2deg)   translateX(-2px); }
-      90%  { transform: rotate(1deg)    translateX(1px); }
-      100% { transform: rotate(0deg)    translateX(0); }
-    }
-
-    /* inner circle + 8 */
-    .ball-inner {
-      width: 42%;
-      height: 42%;
-      border-radius: 50%;
-      background: radial-gradient(circle at 40% 40%, #2a2e6e, #0d0f3c);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      box-shadow: 0 0 0 1.5px rgba(255,255,255,0.08);
-    }
-    .ball-inner span {
-      font-size: clamp(1.1rem, 5vw, 1.5rem);
-      font-weight: 800;
-      color: rgba(255,255,255,0.9);
-      font-style: italic;
-    }
-
-    /* loading spinner overlay on ball */
-    .ball-spinner {
-      display: none;
+    /* Specular highlight layer */
+    .ball::before {
+      content: '';
       position: absolute;
       inset: 0;
       border-radius: 50%;
+      background:
+        radial-gradient(ellipse 55% 40% at 30% 22%,
+          rgba(255,255,255,0.22) 0%,
+          rgba(200,220,255,0.06) 40%,
+          transparent 70%);
+      pointer-events: none;
+    }
+
+    /* Rim darkening */
+    .ball::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      background: radial-gradient(circle at 50% 50%, transparent 58%, rgba(0,0,0,0.55) 100%);
+      pointer-events: none;
+    }
+
+    /* ── Inner circle ── */
+    .inner {
+      position: absolute;
+      top: 50%; left: 50%;
+      width:  38%;
+      height: 38%;
+      transform: translate(-50%, -50%);
+      border-radius: 50%;
+
+      background:
+        radial-gradient(ellipse 60% 45% at 38% 30%, rgba(120,140,255,0.28) 0%, transparent 60%),
+        radial-gradient(circle at 50% 50%, #14194a 0%, #080c2e 55%, #050820 100%);
+
+      box-shadow:
+        inset 0 1px 0 rgba(255,255,255,0.10),
+        inset 0 -1px 0 rgba(0,0,0,0.6),
+        0 0 0 1px rgba(60,80,180,0.20);
+
+      display: flex;
       align-items: center;
       justify-content: center;
-      background: rgba(0,0,0,0.55);
+      overflow: hidden;
     }
-    .ball.loading .ball-spinner { display: flex; }
-    .ball.loading .ball-inner   { opacity: 0; }
 
-    .spinner-ring {
-      width: 36px;
-      height: 36px;
-      border: 3px solid rgba(255,255,255,0.15);
-      border-top-color: #fff;
+    /* inner gloss */
+    .inner::before {
+      content: '';
+      position: absolute;
+      inset: 0;
       border-radius: 50%;
-      animation: spin 0.75s linear infinite;
+      background: radial-gradient(ellipse 70% 40% at 35% 25%,
+        rgba(255,255,255,0.12) 0%, transparent 65%);
+    }
+
+    /* ── 8 numeral ── */
+    .eight {
+      position: relative;
+      font-size: calc(var(--sz) * 0.135);
+      font-weight: 700;
+      font-style: italic;
+      color: #fff;
+      font-family: Georgia, "Times New Roman", serif;
+      letter-spacing: -0.02em;
+      text-shadow:
+        0 1px 3px rgba(0,0,0,0.8),
+        0 0 20px rgba(180,200,255,0.25);
+      line-height: 1;
+      transition: opacity 0.3s ease;
+    }
+
+    /* ── Loading spinner (replaces 8 while fetching) ── */
+    .spinner {
+      position: absolute;
+      top: 50%; left: 50%;
+      width:  38%;
+      height: 38%;
+      transform: translate(-50%, -50%);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease;
+    }
+    .spinner-ring {
+      width: 45%;
+      height: 45%;
+      border: 3px solid rgba(255,255,255,0.12);
+      border-top-color: rgba(180,200,255,0.8);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
 
-    /* status line under ball */
-    .status {
-      font-size: 0.8rem;
-      color: var(--muted);
-      min-height: 1.2em;
-      text-align: center;
-    }
-    .status.countdown { color: var(--accent); font-weight: 600; }
-    .status.error     { color: var(--under); }
+    /* ── Ball states ── */
 
-    /* ── Cards ── */
-    .cards {
-      width: 100%;
-      max-width: 520px;
+    /* tap press */
+    .ball.pressed {
+      transform: scale(0.96);
+    }
+
+    /* bounce animation on tap */
+    .ball.bounce {
+      animation: bounce 0.55s cubic-bezier(0.36, 0.07, 0.19, 0.97) forwards;
+    }
+    @keyframes bounce {
+      0%   { transform: scale(1)    translateY(0)   rotate(0deg); }
+      18%  { transform: scale(0.93) translateY(4%)  rotate(-4deg); }
+      40%  { transform: scale(1.04) translateY(-6%) rotate(3deg); }
+      58%  { transform: scale(0.97) translateY(2%)  rotate(-2deg); }
+      75%  { transform: scale(1.01) translateY(-2%) rotate(1deg); }
+      88%  { transform: scale(0.99) translateY(1%)  rotate(-0.5deg); }
+      100% { transform: scale(1)    translateY(0)   rotate(0deg); }
+    }
+
+    /* loading — 8 fades, spinner appears */
+    .ball.loading .eight   { opacity: 0; }
+    .ball.loading .spinner { opacity: 1; }
+
+    /* error — brief red pulse */
+    .ball.error-pulse {
+      animation: errorPulse 0.9s ease forwards;
+    }
+    @keyframes errorPulse {
+      0%   { box-shadow: 0 0 0 1px rgba(80,120,255,0.12), 0 0 60px rgba(60,90,255,0.10), 0 0 120px rgba(40,70,200,0.08), 0 calc(var(--sz)*.52) calc(var(--sz)*.18) rgba(0,0,0,.8), 0 calc(var(--sz)*.50) calc(var(--sz)*.10) rgba(0,0,0,.9); }
+      30%  { box-shadow: 0 0 0 2px rgba(239,68,68,0.5),   0 0 80px rgba(239,68,68,0.35), 0 0 140px rgba(200,30,30,0.20), 0 calc(var(--sz)*.52) calc(var(--sz)*.18) rgba(0,0,0,.8), 0 calc(var(--sz)*.50) calc(var(--sz)*.10) rgba(0,0,0,.9); }
+      100% { box-shadow: 0 0 0 1px rgba(80,120,255,0.12), 0 0 60px rgba(60,90,255,0.10), 0 0 120px rgba(40,70,200,0.08), 0 calc(var(--sz)*.52) calc(var(--sz)*.18) rgba(0,0,0,.8), 0 calc(var(--sz)*.50) calc(var(--sz)*.10) rgba(0,0,0,.9); }
+    }
+
+    /* ── Bottom sheet ── */
+    #sheet {
+      position: fixed;
+      left: 0; right: 0;
+      bottom: 0;
+      max-height: 72vh;
+      background: rgba(8, 10, 18, 0.82);
+      backdrop-filter: blur(28px) saturate(160%);
+      -webkit-backdrop-filter: blur(28px) saturate(160%);
+      border-top: 1px solid rgba(255,255,255,0.07);
+      border-radius: 20px 20px 0 0;
+      box-shadow: 0 -8px 48px rgba(0,0,0,0.7);
+      transform: translateY(100%);
+      transition: transform 0.42s cubic-bezier(0.32, 0.72, 0, 1);
+      overflow: hidden;
       display: flex;
       flex-direction: column;
-      gap: 10px;
+      z-index: 10;
+    }
+    #sheet.open { transform: translateY(0); }
+
+    /* drag handle */
+    .handle {
+      flex-shrink: 0;
+      display: flex;
+      justify-content: center;
+      padding: 12px 0 6px;
+    }
+    .handle-bar {
+      width: 36px; height: 4px;
+      border-radius: 2px;
+      background: rgba(255,255,255,0.18);
     }
 
+    /* scrollable card list */
+    .card-list {
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      padding: 4px 16px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .card-list::-webkit-scrollbar { display: none; }
+
+    /* ── Player card ── */
     .card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 14px 16px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 12px;
+      padding: 13px 15px;
       display: flex;
       align-items: center;
       gap: 12px;
-      animation: fadeIn 0.25s ease both;
+      animation: slideCard 0.3s ease both;
     }
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(8px); }
+    @keyframes slideCard {
+      from { opacity: 0; transform: translateY(14px); }
       to   { opacity: 1; transform: translateY(0); }
     }
-    .card:nth-child(n) { animation-delay: calc(var(--i, 0) * 35ms); }
+    .card:nth-child(n) { animation-delay: calc(var(--i, 0) * 40ms); }
 
-    .card-info {
-      flex: 1;
-      min-width: 0;
-    }
+    .card-info { flex: 1; min-width: 0; }
     .card-name {
+      font-size: 0.92rem;
       font-weight: 600;
-      font-size: 0.95rem;
+      color: #e8eaf0;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
     .card-line {
-      font-size: 0.78rem;
-      color: var(--muted);
+      font-size: 0.75rem;
+      color: rgba(255,255,255,0.38);
       margin-top: 3px;
     }
 
@@ -209,267 +268,214 @@
       display: flex;
       flex-direction: column;
       align-items: flex-end;
-      gap: 4px;
+      gap: 3px;
       flex-shrink: 0;
     }
 
     .badge {
-      font-size: 0.72rem;
+      font-size: 0.68rem;
       font-weight: 700;
-      letter-spacing: 0.06em;
-      padding: 3px 9px;
-      border-radius: 99px;
-    }
-    .badge.over  { background: rgba(34,197,94,0.15);  color: var(--over);  border: 1px solid rgba(34,197,94,0.3); }
-    .badge.under { background: rgba(239,68,68,0.15);  color: var(--under); border: 1px solid rgba(239,68,68,0.3); }
-    .badge.none  { background: rgba(122,128,153,0.15); color: var(--muted); border: 1px solid var(--border); }
-
-    .confidence {
-      font-size: 0.78rem;
-      color: var(--muted);
-    }
-
-    /* ── Error banner ── */
-    .error-banner {
-      width: 100%;
-      max-width: 520px;
-      background: rgba(239,68,68,0.1);
-      border: 1px solid rgba(239,68,68,0.3);
-      border-radius: var(--radius);
-      padding: 14px 16px;
-      font-size: 0.875rem;
-      color: #fca5a5;
-      text-align: center;
-      display: none;
-    }
-    .error-banner.visible { display: block; }
-
-    /* ── Empty state ── */
-    .empty {
-      text-align: center;
-      color: var(--muted);
-      font-size: 0.875rem;
-      padding: 12px 0;
-    }
-
-    /* ── Model mode pill ── */
-    .model-pill {
-      font-size: 0.72rem;
+      letter-spacing: 0.07em;
       padding: 3px 10px;
       border-radius: 99px;
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      color: var(--muted);
-      align-self: flex-start;
-      margin-left: auto;
-      margin-right: auto;
+    }
+    .badge.over  { background: rgba(34,197,94,0.15);  color: #4ade80; border: 1px solid rgba(34,197,94,0.28); }
+    .badge.under { background: rgba(239,68,68,0.15);  color: #f87171; border: 1px solid rgba(239,68,68,0.28); }
+    .badge.none  { background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.35); border: 1px solid rgba(255,255,255,0.10); }
+
+    .conf {
+      font-size: 0.72rem;
+      color: rgba(255,255,255,0.30);
+    }
+
+    /* ── Sheet backdrop (tap to close) ── */
+    #backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 9;
       display: none;
     }
-    .model-pill.visible { display: block; }
+    #backdrop.visible { display: block; }
 
-    /* ── Footer ── */
-    footer {
-      color: var(--muted);
-      font-size: 0.72rem;
-      text-align: center;
+    /* ── Cooldown overlay on ball (subtle ring) ── */
+    .cooldown-ring {
+      position: absolute;
+      inset: -6px;
+      border-radius: 50%;
+      border: 2px solid rgba(99,102,241,0.0);
+      pointer-events: none;
+      transition: border-color 0.3s;
+    }
+    .ball.cooling .cooldown-ring {
+      border-color: rgba(99,102,241,0.35);
+      animation: ringFade 4s linear forwards;
+    }
+    @keyframes ringFade {
+      0%   { border-color: rgba(99,102,241,0.45); }
+      100% { border-color: rgba(99,102,241,0.00); }
     }
   </style>
 </head>
 <body>
-<div class="page">
-  <header>
-    <h1>Podz Liability Fund</h1>
-    <p>Shake or tap the ball to get tonight's prop predictions</p>
-  </header>
 
-  <div class="ball-wrap">
-    <div class="ball" id="ball" role="button" aria-label="Get predictions" tabindex="0">
-      <div class="ball-inner"><span>8</span></div>
-      <div class="ball-spinner"><div class="spinner-ring"></div></div>
+<div id="stage">
+  <div class="ball" id="ball" role="button" tabindex="0" aria-label="Get predictions">
+    <div class="cooldown-ring"></div>
+    <div class="inner">
+      <span class="eight">8</span>
     </div>
-    <div class="status" id="status">Tap to predict</div>
+    <div class="spinner"><div class="spinner-ring"></div></div>
   </div>
+</div>
 
-  <span class="model-pill" id="modelPill"></span>
+<div id="backdrop"></div>
 
-  <div class="error-banner" id="errorBanner"></div>
-
-  <div class="cards" id="cards"></div>
-
-  <footer>CS 489 Deep Learning &mdash; not financial advice</footer>
+<div id="sheet" role="dialog" aria-label="Predictions">
+  <div class="handle"><div class="handle-bar"></div></div>
+  <div class="card-list" id="cardList"></div>
 </div>
 
 <script>
 (function () {
   'use strict';
 
-  const COOLDOWN_MS = 4000;
-  const ball        = document.getElementById('ball');
-  const statusEl    = document.getElementById('status');
-  const cardsEl     = document.getElementById('cards');
-  const errorBanner = document.getElementById('errorBanner');
-  const modelPill   = document.getElementById('modelPill');
+  const COOLDOWN_MS  = 4000;
+  const SHAKE_THRESH = 20;
+
+  const ball     = document.getElementById('ball');
+  const sheet    = document.getElementById('sheet');
+  const backdrop = document.getElementById('backdrop');
+  const cardList = document.getElementById('cardList');
 
   let loading    = false;
-  let cooldownAt = 0;      // timestamp when cooldown ends
-  let cdTimer    = null;   // setInterval for countdown display
+  let cooldownAt = 0;
 
-  // ── Shake detection (mobile) ────────────────────────────────────────────
-  const SHAKE_THRESH = 18;   // m/s²
+  // ── Shake ──────────────────────────────────────────────────────────────
   let lastAcc = { x: 0, y: 0, z: 0 };
 
-  function handleMotion(e) {
+  function onMotion(e) {
     const a = e.accelerationIncludingGravity;
     if (!a) return;
-    const dx = Math.abs(a.x - lastAcc.x);
-    const dy = Math.abs(a.y - lastAcc.y);
-    const dz = Math.abs(a.z - lastAcc.z);
-    lastAcc = { x: a.x, y: a.y, z: a.z };
-    if (dx + dy + dz > SHAKE_THRESH) triggerPredict();
+    const delta = Math.abs(a.x - lastAcc.x) + Math.abs(a.y - lastAcc.y) + Math.abs(a.z - lastAcc.z);
+    lastAcc = { x: a.x || 0, y: a.y || 0, z: a.z || 0 };
+    if (delta > SHAKE_THRESH) trigger();
   }
 
-  // Request DeviceMotion permission on iOS 13+
-  function requestMotion() {
+  let motionBound = false;
+  function bindMotion() {
+    if (motionBound) return;
+    motionBound = true;
     if (typeof DeviceMotionEvent !== 'undefined' &&
         typeof DeviceMotionEvent.requestPermission === 'function') {
-      DeviceMotionEvent.requestPermission().then(state => {
-        if (state === 'granted') window.addEventListener('devicemotion', handleMotion);
-      }).catch(() => {});
+      DeviceMotionEvent.requestPermission()
+        .then(s => { if (s === 'granted') window.addEventListener('devicemotion', onMotion); })
+        .catch(() => {});
     } else if (typeof DeviceMotionEvent !== 'undefined') {
-      window.addEventListener('devicemotion', handleMotion);
+      window.addEventListener('devicemotion', onMotion);
     }
   }
 
-  // Kick off motion listener after first user interaction
-  let motionRequested = false;
-  function ensureMotion() {
-    if (motionRequested) return;
-    motionRequested = true;
-    requestMotion();
-  }
+  // ── Tap / click ────────────────────────────────────────────────────────
+  ball.addEventListener('pointerdown', () => ball.classList.add('pressed'));
+  ball.addEventListener('pointerup',   () => ball.classList.remove('pressed'));
+  ball.addEventListener('pointerleave',() => ball.classList.remove('pressed'));
 
-  // ── Click / keyboard ────────────────────────────────────────────────────
-  ball.addEventListener('click', () => { ensureMotion(); triggerPredict(); });
+  ball.addEventListener('click', () => { bindMotion(); trigger(); });
   ball.addEventListener('keydown', e => {
-    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); triggerPredict(); }
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); trigger(); }
   });
 
-  // ── Core trigger ────────────────────────────────────────────────────────
-  function triggerPredict() {
+  // ── Close sheet by tapping backdrop ───────────────────────────────────
+  backdrop.addEventListener('click', closeSheet);
+
+  // ── Swipe sheet down to close ──────────────────────────────────────────
+  let touchStartY = 0;
+  sheet.addEventListener('touchstart', e => { touchStartY = e.touches[0].clientY; }, { passive: true });
+  sheet.addEventListener('touchend',   e => {
+    if (e.changedTouches[0].clientY - touchStartY > 60) closeSheet();
+  }, { passive: true });
+
+  function closeSheet() {
+    sheet.classList.remove('open');
+    backdrop.classList.remove('visible');
+  }
+
+  // ── Core trigger ──────────────────────────────────────────────────────
+  function trigger() {
     if (loading || Date.now() < cooldownAt) return;
     fetchPredictions();
   }
 
-  // ── Countdown display ───────────────────────────────────────────────────
-  function startCountdown() {
-    clearInterval(cdTimer);
-    cdTimer = setInterval(() => {
-      const remaining = Math.ceil((cooldownAt - Date.now()) / 1000);
-      if (remaining <= 0) {
-        clearInterval(cdTimer);
-        setStatus('Tap to predict', '');
-        ball.classList.remove('disabled');
-      } else {
-        setStatus(`Wait ${remaining}s`, 'countdown');
-      }
-    }, 250);
-  }
-
-  function setStatus(text, cls) {
-    statusEl.textContent = text;
-    statusEl.className   = 'status' + (cls ? ' ' + cls : '');
-  }
-
-  // ── Fetch ────────────────────────────────────────────────────────────────
+  // ── Fetch ──────────────────────────────────────────────────────────────
   async function fetchPredictions() {
     loading = true;
-    ball.classList.add('loading', 'shake');
-    ball.classList.remove('disabled');
-    ball.addEventListener('animationend', () => ball.classList.remove('shake'), { once: true });
-    setStatus('Asking the ball…', '');
-    hideError();
+    closeSheet();
+
+    // bounce then loading state
+    ball.classList.remove('bounce', 'error-pulse', 'cooling');
+    void ball.offsetWidth; // reflow
+    ball.classList.add('bounce');
+    ball.addEventListener('animationend', () => {
+      ball.classList.remove('bounce');
+      ball.classList.add('loading');
+    }, { once: true });
 
     try {
       const res = await fetch('/predict', {
         headers: { 'Accept': 'application/json' },
         signal: AbortSignal.timeout(15000),
       });
-
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
       const data = await res.json();
       renderCards(data.players || []);
-      showModel(data.model_mode);
-
-    } catch (err) {
-      showError(
-        err.name === 'TimeoutError'
-          ? 'Request timed out — API may be starting up. Try again in a moment.'
-          : 'Predictions unavailable — could not reach the API.'
-      );
-      clearCards();
+      openSheet();
+    } catch (_) {
+      ball.classList.remove('loading');
+      void ball.offsetWidth;
+      ball.classList.add('error-pulse');
+      ball.addEventListener('animationend', () => ball.classList.remove('error-pulse'), { once: true });
     } finally {
       loading    = false;
       cooldownAt = Date.now() + COOLDOWN_MS;
       ball.classList.remove('loading');
-      ball.classList.add('disabled');
-      startCountdown();
+      ball.classList.add('cooling');
+      setTimeout(() => ball.classList.remove('cooling'), COOLDOWN_MS + 300);
     }
   }
 
-  // ── Render ───────────────────────────────────────────────────────────────
+  // ── Render ─────────────────────────────────────────────────────────────
   function renderCards(players) {
     if (!players.length) {
-      cardsEl.innerHTML = '<p class="empty">No player data returned.</p>';
+      cardList.innerHTML = '<p style="color:rgba(255,255,255,.3);font-size:.85rem;text-align:center;padding:16px 0">No data available</p>';
       return;
     }
-
-    cardsEl.innerHTML = players.map((p, i) => {
+    cardList.innerHTML = players.map((p, i) => {
       const rec  = p.recommendation;
       const cls  = rec === 'OVER' ? 'over' : rec === 'UNDER' ? 'under' : 'none';
-      const label = rec || '–';
-      const conf  = p.confidence != null ? `${Math.round(p.confidence * 100)}%` : '';
-      const line  = p.prop_line   != null ? `Prop: ${p.prop_line} pts` : 'Prop: –';
-      const err   = p.error       ? ` &mdash; ${escHtml(p.error)}` : '';
-
+      const line = p.prop_line != null ? `${p.prop_line} pts` : '–';
+      const conf = p.confidence != null ? `${Math.round(p.confidence * 100)}%` : '';
       return `<div class="card" style="--i:${i}">
         <div class="card-info">
-          <div class="card-name">${escHtml(p.name)}</div>
-          <div class="card-line">${line}${err}</div>
+          <div class="card-name">${esc(p.name)}</div>
+          <div class="card-line">${esc(line)}</div>
         </div>
         <div class="card-right">
-          <span class="badge ${cls}">${escHtml(label)}</span>
-          ${conf ? `<span class="confidence">${conf} conf.</span>` : ''}
+          <span class="badge ${cls}">${esc(rec || '–')}</span>
+          ${conf ? `<span class="conf">${conf}</span>` : ''}
         </div>
       </div>`;
     }).join('');
   }
 
-  function clearCards() {
-    cardsEl.innerHTML = '';
+  function openSheet() {
+    sheet.classList.add('open');
+    backdrop.classList.add('visible');
   }
 
-  function showModel(mode) {
-    if (!mode) { modelPill.classList.remove('visible'); return; }
-    modelPill.textContent = `model: ${mode}`;
-    modelPill.classList.add('visible');
-  }
-
-  function showError(msg) {
-    errorBanner.textContent = msg;
-    errorBanner.classList.add('visible');
-  }
-
-  function hideError() {
-    errorBanner.classList.remove('visible');
-  }
-
-  function escHtml(str) {
-    return String(str)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
+  function esc(s) {
+    return String(s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 }());
 </script>
