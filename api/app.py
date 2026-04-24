@@ -41,7 +41,7 @@ from functools import lru_cache
 import torch
 import numpy as np
 import pandas as pd
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_from_directory
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 
@@ -74,6 +74,7 @@ limiter = Limiter(
 # Model + checkpoint paths
 # ---------------------------------------------------------------------------
 
+FRONTEND_DIR    = ROOT / "frontend"
 CHECKPOINTS_DIR = Path(os.environ.get("CHECKPOINTS_DIR", ROOT / "checkpoints"))
 FUSION_CKPT     = CHECKPOINTS_DIR / "fusion_best.pt"
 LSTM_CKPT       = CHECKPOINTS_DIR / "lstm_best.pt"
@@ -241,6 +242,11 @@ def _run_inference(window: np.ndarray) -> tuple[str, float]:
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
+
+@app.route("/")
+def index():
+    return send_from_directory(FRONTEND_DIR, "index.html")
+
 
 @app.route("/health")
 def health():
