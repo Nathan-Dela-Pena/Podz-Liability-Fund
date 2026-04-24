@@ -13,7 +13,7 @@ __pycache__/
 
 # Data (generated — run the ingestion/processing scripts to rebuild)
 data/raw/
-data/processed/
+data/processed/all_records.csv
 data/eda_figures/
 data/frames/
 data/pose/
