@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Podz Liability Fund</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0d0f14;
+      --surface:   #161a23;
+      --surface2:  #1e2330;
+      --border:    #2a3045;
+      --text:      #e8eaf0;
+      --muted:     #7a8099;
+      --over:      #22c55e;
+      --under:     #ef4444;
+      --accent:    #6366f1;
+      --accent-dk: #4f52cc;
+      --radius:    14px;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── Layout ── */
+    .page {
+      min-height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 24px 16px 48px;
+      gap: 24px;
+    }
+
+    /* ── Header ── */
+    header {
+      text-align: center;
+      width: 100%;
+      max-width: 520px;
+    }
+    header h1 {
+      font-size: clamp(1.3rem, 5vw, 1.8rem);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      line-height: 1.2;
+    }
+    header p {
+      margin-top: 6px;
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+
+    /* ── 8-ball button ── */
+    .ball-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .ball {
+      width: clamp(120px, 30vw, 160px);
+      height: clamp(120px, 30vw, 160px);
+      border-radius: 50%;
+      background: radial-gradient(circle at 35% 35%, #2a2a2a, #000 70%);
+      box-shadow:
+        0 0 0 2px #1a1a1a,
+        0 8px 32px rgba(0,0,0,0.7),
+        inset 0 -4px 12px rgba(255,255,255,0.04);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      user-select: none;
+      transition: transform 0.12s ease, box-shadow 0.12s ease;
+      position: relative;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .ball:active:not(.disabled) {
+      transform: scale(0.94);
+      box-shadow:
+        0 0 0 2px #1a1a1a,
+        0 4px 16px rgba(0,0,0,0.9),
+        inset 0 -4px 12px rgba(255,255,255,0.04);
+    }
+
+    .ball.disabled {
+      cursor: not-allowed;
+      opacity: 0.55;
+    }
+
+    .ball.shake {
+      animation: shake 0.45s ease;
+    }
+
+    @keyframes shake {
+      0%   { transform: rotate(0deg)    translateX(0); }
+      15%  { transform: rotate(-8deg)   translateX(-6px); }
+      30%  { transform: rotate(6deg)    translateX(5px); }
+      45%  { transform: rotate(-5deg)   translateX(-4px); }
+      60%  { transform: rotate(4deg)    translateX(3px); }
+      75%  { transform: rotate(-2deg)   translateX(-2px); }
+      90%  { transform: rotate(1deg)    translateX(1px); }
+      100% { transform: rotate(0deg)    translateX(0); }
+    }
+
+    /* inner circle + 8 */
+    .ball-inner {
+      width: 42%;
+      height: 42%;
+      border-radius: 50%;
+      background: radial-gradient(circle at 40% 40%, #2a2e6e, #0d0f3c);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 0 1.5px rgba(255,255,255,0.08);
+    }
+    .ball-inner span {
+      font-size: clamp(1.1rem, 5vw, 1.5rem);
+      font-weight: 800;
+      color: rgba(255,255,255,0.9);
+      font-style: italic;
+    }
+
+    /* loading spinner overlay on ball */
+    .ball-spinner {
+      display: none;
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0,0,0,0.55);
+    }
+    .ball.loading .ball-spinner { display: flex; }
+    .ball.loading .ball-inner   { opacity: 0; }
+
+    .spinner-ring {
+      width: 36px;
+      height: 36px;
+      border: 3px solid rgba(255,255,255,0.15);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* status line under ball */
+    .status {
+      font-size: 0.8rem;
+      color: var(--muted);
+      min-height: 1.2em;
+      text-align: center;
+    }
+    .status.countdown { color: var(--accent); font-weight: 600; }
+    .status.error     { color: var(--under); }
+
+    /* ── Cards ── */
+    .cards {
+      width: 100%;
+      max-width: 520px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      animation: fadeIn 0.25s ease both;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .card:nth-child(n) { animation-delay: calc(var(--i, 0) * 35ms); }
+
+    .card-info {
+      flex: 1;
+      min-width: 0;
+    }
+    .card-name {
+      font-weight: 600;
+      font-size: 0.95rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .card-line {
+      font-size: 0.78rem;
+      color: var(--muted);
+      margin-top: 3px;
+    }
+
+    .card-right {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+
+    .badge {
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      padding: 3px 9px;
+      border-radius: 99px;
+    }
+    .badge.over  { background: rgba(34,197,94,0.15);  color: var(--over);  border: 1px solid rgba(34,197,94,0.3); }
+    .badge.under { background: rgba(239,68,68,0.15);  color: var(--under); border: 1px solid rgba(239,68,68,0.3); }
+    .badge.none  { background: rgba(122,128,153,0.15); color: var(--muted); border: 1px solid var(--border); }
+
+    .confidence {
+      font-size: 0.78rem;
+      color: var(--muted);
+    }
+
+    /* ── Error banner ── */
+    .error-banner {
+      width: 100%;
+      max-width: 520px;
+      background: rgba(239,68,68,0.1);
+      border: 1px solid rgba(239,68,68,0.3);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      font-size: 0.875rem;
+      color: #fca5a5;
+      text-align: center;
+      display: none;
+    }
+    .error-banner.visible { display: block; }
+
+    /* ── Empty state ── */
+    .empty {
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.875rem;
+      padding: 12px 0;
+    }
+
+    /* ── Model mode pill ── */
+    .model-pill {
+      font-size: 0.72rem;
+      padding: 3px 10px;
+      border-radius: 99px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      align-self: flex-start;
+      margin-left: auto;
+      margin-right: auto;
+      display: none;
+    }
+    .model-pill.visible { display: block; }
+
+    /* ── Footer ── */
+    footer {
+      color: var(--muted);
+      font-size: 0.72rem;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <h1>Podz Liability Fund</h1>
+    <p>Shake or tap the ball to get tonight's prop predictions</p>
+  </header>
+
+  <div class="ball-wrap">
+    <div class="ball" id="ball" role="button" aria-label="Get predictions" tabindex="0">
+      <div class="ball-inner"><span>8</span></div>
+      <div class="ball-spinner"><div class="spinner-ring"></div></div>
+    </div>
+    <div class="status" id="status">Tap to predict</div>
+  </div>
+
+  <span class="model-pill" id="modelPill"></span>
+
+  <div class="error-banner" id="errorBanner"></div>
+
+  <div class="cards" id="cards"></div>
+
+  <footer>CS 489 Deep Learning &mdash; not financial advice</footer>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  const COOLDOWN_MS = 4000;
+  const ball        = document.getElementById('ball');
+  const statusEl    = document.getElementById('status');
+  const cardsEl     = document.getElementById('cards');
+  const errorBanner = document.getElementById('errorBanner');
+  const modelPill   = document.getElementById('modelPill');
+
+  let loading    = false;
+  let cooldownAt = 0;      // timestamp when cooldown ends
+  let cdTimer    = null;   // setInterval for countdown display
+
+  // ── Shake detection (mobile) ────────────────────────────────────────────
+  const SHAKE_THRESH = 18;   // m/s²
+  let lastAcc = { x: 0, y: 0, z: 0 };
+
+  function handleMotion(e) {
+    const a = e.accelerationIncludingGravity;
+    if (!a) return;
+    const dx = Math.abs(a.x - lastAcc.x);
+    const dy = Math.abs(a.y - lastAcc.y);
+    const dz = Math.abs(a.z - lastAcc.z);
+    lastAcc = { x: a.x, y: a.y, z: a.z };
+    if (dx + dy + dz > SHAKE_THRESH) triggerPredict();
+  }
+
+  // Request DeviceMotion permission on iOS 13+
+  function requestMotion() {
+    if (typeof DeviceMotionEvent !== 'undefined' &&
+        typeof DeviceMotionEvent.requestPermission === 'function') {
+      DeviceMotionEvent.requestPermission().then(state => {
+        if (state === 'granted') window.addEventListener('devicemotion', handleMotion);
+      }).catch(() => {});
+    } else if (typeof DeviceMotionEvent !== 'undefined') {
+      window.addEventListener('devicemotion', handleMotion);
+    }
+  }
+
+  // Kick off motion listener after first user interaction
+  let motionRequested = false;
+  function ensureMotion() {
+    if (motionRequested) return;
+    motionRequested = true;
+    requestMotion();
+  }
+
+  // ── Click / keyboard ────────────────────────────────────────────────────
+  ball.addEventListener('click', () => { ensureMotion(); triggerPredict(); });
+  ball.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); triggerPredict(); }
+  });
+
+  // ── Core trigger ────────────────────────────────────────────────────────
+  function triggerPredict() {
+    if (loading || Date.now() < cooldownAt) return;
+    fetchPredictions();
+  }
+
+  // ── Countdown display ───────────────────────────────────────────────────
+  function startCountdown() {
+    clearInterval(cdTimer);
+    cdTimer = setInterval(() => {
+      const remaining = Math.ceil((cooldownAt - Date.now()) / 1000);
+      if (remaining <= 0) {
+        clearInterval(cdTimer);
+        setStatus('Tap to predict', '');
+        ball.classList.remove('disabled');
+      } else {
+        setStatus(`Wait ${remaining}s`, 'countdown');
+      }
+    }, 250);
+  }
+
+  function setStatus(text, cls) {
+    statusEl.textContent = text;
+    statusEl.className   = 'status' + (cls ? ' ' + cls : '');
+  }
+
+  // ── Fetch ────────────────────────────────────────────────────────────────
+  async function fetchPredictions() {
+    loading = true;
+    ball.classList.add('loading', 'shake');
+    ball.classList.remove('disabled');
+    ball.addEventListener('animationend', () => ball.classList.remove('shake'), { once: true });
+    setStatus('Asking the ball…', '');
+    hideError();
+
+    try {
+      const res = await fetch('/predict', {
+        headers: { 'Accept': 'application/json' },
+        signal: AbortSignal.timeout(15000),
+      });
+
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      const data = await res.json();
+      renderCards(data.players || []);
+      showModel(data.model_mode);
+
+    } catch (err) {
+      showError(
+        err.name === 'TimeoutError'
+          ? 'Request timed out — API may be starting up. Try again in a moment.'
+          : 'Predictions unavailable — could not reach the API.'
+      );
+      clearCards();
+    } finally {
+      loading    = false;
+      cooldownAt = Date.now() + COOLDOWN_MS;
+      ball.classList.remove('loading');
+      ball.classList.add('disabled');
+      startCountdown();
+    }
+  }
+
+  // ── Render ───────────────────────────────────────────────────────────────
+  function renderCards(players) {
+    if (!players.length) {
+      cardsEl.innerHTML = '<p class="empty">No player data returned.</p>';
+      return;
+    }
+
+    cardsEl.innerHTML = players.map((p, i) => {
+      const rec  = p.recommendation;
+      const cls  = rec === 'OVER' ? 'over' : rec === 'UNDER' ? 'under' : 'none';
+      const label = rec || '–';
+      const conf  = p.confidence != null ? `${Math.round(p.confidence * 100)}%` : '';
+      const line  = p.prop_line   != null ? `Prop: ${p.prop_line} pts` : 'Prop: –';
+      const err   = p.error       ? ` &mdash; ${escHtml(p.error)}` : '';
+
+      return `<div class="card" style="--i:${i}">
+        <div class="card-info">
+          <div class="card-name">${escHtml(p.name)}</div>
+          <div class="card-line">${line}${err}</div>
+        </div>
+        <div class="card-right">
+          <span class="badge ${cls}">${escHtml(label)}</span>
+          ${conf ? `<span class="confidence">${conf} conf.</span>` : ''}
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  function clearCards() {
+    cardsEl.innerHTML = '';
+  }
+
+  function showModel(mode) {
+    if (!mode) { modelPill.classList.remove('visible'); return; }
+    modelPill.textContent = `model: ${mode}`;
+    modelPill.classList.add('visible');
+  }
+
+  function showError(msg) {
+    errorBanner.textContent = msg;
+    errorBanner.classList.add('visible');
+  }
+
+  function hideError() {
+    errorBanner.classList.remove('visible');
+  }
+
+  function escHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+}());
+</script>
+</body>
+</html>
