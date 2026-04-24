@@ -474,8 +474,8 @@ def train_cnn(
     -------
     Trained CNNBranch model (on CPU).
     """
-    train_path = train_path or os.path.join(PROCESSED_DIR, "train.csv")
-    val_path   = val_path   or os.path.join(PROCESSED_DIR, "val.csv")
+    train_path = os.path.abspath(train_path or os.path.join(PROCESSED_DIR, "train.csv"))
+    val_path   = os.path.abspath(val_path   or os.path.join(PROCESSED_DIR, "val.csv"))
 
     if device is None:
         device = (
