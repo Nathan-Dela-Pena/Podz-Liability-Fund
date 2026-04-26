@@ -42,6 +42,7 @@ import torch
 import numpy as np
 import pandas as pd
 from flask import Flask, jsonify, request, send_from_directory
+from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 
@@ -63,6 +64,7 @@ log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 app = Flask(__name__)
+CORS(app)
 limiter = Limiter(
     key_func=get_remote_address,
     app=app,
