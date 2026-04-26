@@ -51,7 +51,7 @@ ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
 from config import (
-    PLAYERS, PLAYER_IDS, FEATURE_COLS, WINDOW_SIZE,
+    FEATURE_COLS, WINDOW_SIZE,
     HIDDEN_SIZE, NUM_LAYERS, DROPOUT, PROCESSED_DIR,
 )
 
@@ -141,75 +141,55 @@ def _get_model():
 
 
 # ---------------------------------------------------------------------------
-# Feature builder — rolling 5-game window from nba_api
+# Feature builder — rolling 5-game window from processed CSVs (no live API)
 # ---------------------------------------------------------------------------
 
-def _fetch_recent_stats(player_id: int, player_name: str, n_games: int = WINDOW_SIZE):
+def _load_windows_from_csv() -> dict:
     """
-    Fetch the last *n_games* regular-season games for *player_id* using nba_api.
-    Returns a (n_games, len(FEATURE_COLS)) float32 array, or None on failure.
+    Build a {player_name: (window, prop_line)} dict from the most recent
+    processed CSV (test.csv preferred, train.csv as fallback).
+
+    The CSV stores features as {FEAT}_t0 (most recent) .. {FEAT}_t4 (oldest).
+    We reconstruct a (WINDOW_SIZE, n_features) array in oldest→newest order
+    so it matches what the LSTM was trained on.
     """
-    try:
-        from nba_api.stats.endpoints import PlayerGameLog
-        gl  = PlayerGameLog(player_id=player_id, season="2025-26",
-                            season_type_all_star="Regular Season", timeout=30)
-        df  = gl.get_data_frames()[0]
-    except Exception as exc:
-        log.warning("nba_api failed for %s: %s", player_name, exc)
-        return None
+    for csv_name in ("test.csv", "train.csv"):
+        csv_path = Path(PROCESSED_DIR) / csv_name
+        if not csv_path.exists():
+            continue
 
-    if df.empty or len(df) < n_games:
-        log.warning("Not enough games for %s (%d found)", player_name, len(df))
-        return None
+        df = pd.read_csv(csv_path)
+        df["GAME_DATE"] = pd.to_datetime(df["GAME_DATE"], errors="coerce")
+        # one row per player — their most recent game window
+        latest = (
+            df.sort_values("GAME_DATE")
+              .groupby("PLAYER_NAME", sort=False)
+              .last()
+              .reset_index()
+        )
 
-    df = df.head(n_games)
+        results = {}
+        for _, row in latest.iterrows():
+            name = row["PLAYER_NAME"]
+            # Build (WINDOW_SIZE, n_features): index 0 = oldest (t4), 4 = newest (t0)
+            window = np.zeros((WINDOW_SIZE, len(FEATURE_COLS)), dtype=np.float32)
+            for step, t in enumerate(range(WINDOW_SIZE - 1, -1, -1)):
+                for f_idx, feat in enumerate(FEATURE_COLS):
+                    col = f"{feat}_t{t}"
+                    if col in row.index and pd.notna(row[col]):
+                        window[step, f_idx] = float(row[col])
 
-    # Derive TS_PCT and EFG_PCT if missing
-    if "TS_PCT" not in df.columns:
-        df["TS_PCT"] = df["PTS"] / (2 * (df["FGA"] + 0.44 * df.get("FTA", 0)))
-    if "EFG_PCT" not in df.columns:
-        df["EFG_PCT"] = (df.get("FGM", df["FGA"] * 0.45) + 0.5 * df.get("FG3M", 0)) / df["FGA"].replace(0, 1)
-    if "USG_PCT" not in df.columns:
-        df["USG_PCT"] = 0.0
-    if "OPP_DRTG" not in df.columns:
-        df["OPP_DRTG"] = 0.0
+            prop_line = None
+            if "PROP_LINE" in row.index and pd.notna(row["PROP_LINE"]):
+                prop_line = round(float(row["PROP_LINE"]), 1)
 
-    try:
-        window = df[FEATURE_COLS].values.astype(np.float32)
-    except KeyError as exc:
-        log.warning("Missing feature columns for %s: %s", player_name, exc)
-        return None
+            results[name] = (window, prop_line)
 
-    # Per-column z-score normalisation using training set statistics
-    train_csv = Path(PROCESSED_DIR) / "train.csv"
-    if train_csv.exists():
-        train_df = pd.read_csv(train_csv)
-        for j, col in enumerate(FEATURE_COLS):
-            col_t0 = f"{col}_t0"
-            if col_t0 in train_df.columns:
-                mu, sigma = train_df[col_t0].mean(), train_df[col_t0].std()
-                if sigma > 0:
-                    window[:, j] = (window[:, j] - mu) / sigma
+        log.info("Loaded %d player windows from %s", len(results), csv_name)
+        return results
 
-    return window[::-1].copy()  # oldest → newest
-
-
-def _fetch_prop_line(player_name: str) -> float | None:
-    """Attempt to fetch today's prop line from cached odds data."""
-    try:
-        odds_dir = ROOT / "data" / "raw" / "odds"
-        files    = sorted(odds_dir.glob("*.json"))
-        if not files:
-            return None
-        import json
-        latest = json.loads(files[-1].read_text())
-        for game in latest.values():
-            lines = game.get("prop_lines", {})
-            if player_name in lines:
-                return lines[player_name]
-    except Exception:
-        pass
-    return None
+    log.error("No processed CSV found in %s", PROCESSED_DIR)
+    return {}
 
 
 # ---------------------------------------------------------------------------
@@ -269,46 +249,30 @@ def health():
 @app.route("/predict")
 @limiter.limit("10 per minute")
 def predict():
+    _get_model()  # ensure loaded
+
+    player_windows = _load_windows_from_csv()
+    if not player_windows:
+        return jsonify({"error": "No processed data found", "players": []}), 503
+
     results = []
-
-    for name in PLAYERS:
-        player_id = PLAYER_IDS.get(name)
-        if player_id is None:
-            continue
-
-        window = _fetch_recent_stats(player_id, name)
-        if window is None:
-            results.append({
-                "name":           name,
-                "recommendation": None,
-                "confidence":     None,
-                "prop_line":      _fetch_prop_line(name),
-                "stat_type":      "points",
-                "error":          "insufficient recent data",
-            })
-            continue
-
+    for name, (window, prop_line) in player_windows.items():
         try:
             recommendation, confidence = _run_inference(window)
         except Exception as exc:
             log.exception("Inference failed for %s", name)
-            results.append({
-                "name":           name,
-                "recommendation": None,
-                "confidence":     None,
-                "prop_line":      _fetch_prop_line(name),
-                "stat_type":      "points",
-                "error":          str(exc),
-            })
             continue
 
         results.append({
             "name":           name,
             "recommendation": recommendation,
             "confidence":     confidence,
-            "prop_line":      _fetch_prop_line(name),
-            "stat_type":      "points",
+            "prop_line":      prop_line,
+            "stat_type":      "PTS",
         })
+
+    # Sort by confidence descending so highest-conviction picks come first
+    results.sort(key=lambda r: r["confidence"], reverse=True)
 
     return jsonify({"players": results, "model_mode": _model_mode})
 
