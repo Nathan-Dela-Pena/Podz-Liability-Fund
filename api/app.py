@@ -340,64 +340,83 @@ def health():
     })
 
 
-@app.route("/predict")
-@limiter.limit("10 per minute")
-def predict():
-    _get_model()  # ensure model is loaded
-
-    # ── 1. Load trained player windows from CSV ──────────────────────────
-    player_windows = _load_windows_from_csv()
-    if not player_windows:
-        return jsonify({"error": "No processed data found", "players": []}), 503
-
-    # ── 2. Fetch live prop lines ─────────────────────────────────────────
-    if not os.environ.get("ODDS_API_KEY"):
-        return jsonify({
-            "error": "ODDS_API_KEY is not set — set this env var to enable live predictions",
-            "players": [],
-        }), 503
-
-    try:
-        live_props = _fetch_live_props()
-    except ValueError as exc:
-        return jsonify({"error": str(exc), "players": []}), 503
-    except Exception as exc:
-        log.exception("Odds API request failed")
-        return jsonify({"error": f"Odds API error: {exc}", "players": []}), 502
-
-    if not live_props:
-        return jsonify({"error": "No player_points props found for today's games", "players": []}), 404
-
-    # ── 3. Match props → trained players → inference ─────────────────────
-    trained_names = set(player_windows.keys())
+def _run_inference_for_windows(player_windows: dict) -> list:
+    """Run LSTM inference on every player in *player_windows*.
+    Returns a list of result dicts (no prop_line — caller fills that in)."""
     results = []
-
-    for odds_name, prop_line in live_props.items():
-        matched = _match_player(odds_name, trained_names)
-        if matched is None:
-            log.debug("No trained match for '%s'", odds_name)
-            continue
-
-        window, _ = player_windows[matched]
+    for name, (window, prop_line) in player_windows.items():
         try:
             recommendation, confidence = _run_inference(window)
         except Exception:
-            log.exception("Inference failed for %s", matched)
+            log.exception("Inference failed for %s", name)
             continue
-
         results.append({
-            "name":           matched,
+            "name":           name,
             "recommendation": recommendation,
             "confidence":     confidence,
             "prop_line":      prop_line,
             "stat_type":      "PTS",
         })
+    return results
 
+
+@app.route("/predict")
+@limiter.limit("10 per minute")
+def predict():
+    _get_model()  # ensure model is loaded
+
+    # ── 1. Load trained player windows from CSV (always needed) ──────────
+    player_windows = _load_windows_from_csv()
+    if not player_windows:
+        return jsonify({"error": "No processed data found", "players": []}), 503
+
+    trained_names = set(player_windows.keys())
+
+    # ── 2. Try live Odds API ──────────────────────────────────────────────
+    key = os.environ.get("ODDS_API_KEY", "")
+    live_props = None
+    if key:
+        try:
+            live_props = _fetch_live_props()
+            if not live_props:
+                log.info("Odds API returned no props for today — using CSV fallback")
+        except Exception as exc:
+            log.warning("Odds API unavailable (%s) — using CSV fallback", exc)
+            live_props = None
+    else:
+        log.info("ODDS_API_KEY not set — using CSV fallback")
+
+    # ── 3a. Live mode: match props → trained players → inference ─────────
+    if live_props:
+        results = []
+        for odds_name, prop_line in live_props.items():
+            matched = _match_player(odds_name, trained_names)
+            if matched is None:
+                log.debug("No trained match for '%s'", odds_name)
+                continue
+            window, _ = player_windows[matched]
+            try:
+                recommendation, confidence = _run_inference(window)
+            except Exception:
+                log.exception("Inference failed for %s", matched)
+                continue
+            results.append({
+                "name":           matched,
+                "recommendation": recommendation,
+                "confidence":     confidence,
+                "prop_line":      prop_line,
+                "stat_type":      "PTS",
+            })
+        results.sort(key=lambda r: r["confidence"], reverse=True)
+        log.info("[LIVE] Returning %d predictions (%d props, %d trained players)",
+                 len(results), len(live_props), len(trained_names))
+        return jsonify({"players": results, "model_mode": _model_mode, "source": "live"})
+
+    # ── 3b. Fallback: run inference on all CSV players, use stored lines ──
+    results = _run_inference_for_windows(player_windows)
     results.sort(key=lambda r: r["confidence"], reverse=True)
-    log.info("Returning %d predictions (%d props fetched, %d trained players)",
-             len(results), len(live_props), len(trained_names))
-
-    return jsonify({"players": results, "model_mode": _model_mode})
+    log.info("[FALLBACK] Returning %d predictions from CSV", len(results))
+    return jsonify({"players": results, "model_mode": _model_mode, "source": "fallback"})
 
 
 # ---------------------------------------------------------------------------
