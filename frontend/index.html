@@ -1,526 +1,458 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-  <title>8</title>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no"/>
+  <title>Podz Liability Fund</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --nav-h:   56px;
+      --ball-sz: min(70vmin, 520px);
+      --ball-crop: 0.40; /* fraction hidden below viewport */
+    }
 
     html, body {
       width: 100%; height: 100%;
       background: #000;
       overflow: hidden;
+      color: #fff;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
       -webkit-font-smoothing: antialiased;
     }
 
-    /* ── Stage ─────────────────────────────────────────────────────────── */
-    #stage {
-      width: 100%; height: 100%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    /* ── Ball shell ─────────────────────────────────────────────────────── */
-    .ball {
-      --sz: min(80vmin, 560px);
-      width:  var(--sz);
-      height: var(--sz);
-      border-radius: 50%;
-      position: relative;
-      overflow: hidden;
-      cursor: pointer;
-      -webkit-tap-highlight-color: transparent;
-      user-select: none;
-      flex-shrink: 0;
-
-      /* Atmosphere rim glow + ground shadow — outside the clip */
-      box-shadow:
-        0 0 0 3px  rgba(100,190,255,0.25),
-        0 0 50px   rgba(70,150,255,0.18),
-        0 0 100px  rgba(40,110,220,0.10),
-        0 calc(var(--sz)*0.52) calc(var(--sz)*0.15) rgba(0,0,0,0.85),
-        0 calc(var(--sz)*0.50) calc(var(--sz)*0.08) rgba(0,0,0,0.95);
-
-      transform-origin: center 55%;
-      transition: box-shadow 0.3s ease;
-    }
-
-    /* ── Ocean ──────────────────────────────────────────────────────────── */
-    .ocean {
-      position: absolute;
-      inset: 0;
-      background: radial-gradient(
-        ellipse 70% 60% at 38% 32%,
-        #2890d0 0%,
-        #1468a0 28%,
-        #0a4878 55%,
-        #052d58 78%,
-        #021830 100%
-      );
-      z-index: 1;
-    }
-
-    /* ── Rotating continent SVG ─────────────────────────────────────────── */
-    .continents {
-      position: absolute;
-      top: 0; left: 0;
-      width: 200%; height: 100%;
-      z-index: 2;
-      animation: globe-spin 16s linear infinite;
-    }
-    .continents.fast { animation-duration: 1.8s; }
-
-    @keyframes globe-spin {
-      from { transform: translateX(0); }
-      to   { transform: translateX(-50%); }
-    }
-
-    /* ── Sphere lighting (lives on top of globe, under 8-circle) ────────── */
-    .lighting {
-      position: absolute;
-      inset: 0;
-      border-radius: 50%;
-      z-index: 3;
-      pointer-events: none;
+    /* ── Space background ──────────────────────────────────────────────── */
+    body::before {
+      content: '';
+      position: fixed; inset: 0; z-index: 0;
       background:
-        /* specular highlight — top-left, bright white */
-        radial-gradient(
-          ellipse 52% 42% at 28% 22%,
-          rgba(255,255,255,0.62) 0%,
-          rgba(220,240,255,0.25) 30%,
-          rgba(180,220,255,0.06) 55%,
-          transparent 72%
-        ),
-        /* secondary soft fill — opposite side */
-        radial-gradient(
-          ellipse 40% 35% at 72% 76%,
-          rgba(30,80,180,0.20) 0%,
-          transparent 60%
-        ),
-        /* rim darkening */
-        radial-gradient(
-          circle at 50% 50%,
-          transparent 52%,
-          rgba(0,8,24,0.50) 72%,
-          rgba(0,4,16,0.82) 90%,
-          rgba(0,0,8,0.95) 100%
-        );
-    }
-
-    /* ── White 8-ball circle ────────────────────────────────────────────── */
-    .eight-wrap {
-      position: absolute;
-      top: 50%; left: 50%;
-      transform: translate(-50%, -50%);
-      width:  36%;
-      height: 36%;
-      border-radius: 50%;
-      z-index: 4;
-
-      background: radial-gradient(
-        circle at 40% 35%,
-        #ffffff 0%,
-        #f0f0f0 60%,
-        #d8d8d8 100%
-      );
-      box-shadow:
-        0 2px 8px  rgba(0,0,0,0.55),
-        0 1px 2px  rgba(0,0,0,0.40),
-        inset 0 1px 0 rgba(255,255,255,0.90),
-        inset 0 -2px 4px rgba(0,0,0,0.15);
-
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: opacity 0.25s ease;
-    }
-
-    .eight {
-      font-size: calc(var(--sz) * 0.115);
-      font-weight: 900;
-      color: #111;
-      font-family: Georgia, "Times New Roman", serif;
-      font-style: italic;
-      letter-spacing: -0.02em;
-      line-height: 1;
-      text-shadow: 0 1px 2px rgba(0,0,0,0.3);
-      transition: opacity 0.2s ease;
-    }
-
-    /* ── Loading spinner (replaces eight-wrap while fetching) ───────────── */
-    .spinner-wrap {
-      position: absolute;
-      top: 50%; left: 50%;
-      transform: translate(-50%, -50%);
-      width:  36%;
-      height: 36%;
-      border-radius: 50%;
-      z-index: 5;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      opacity: 0;
+        radial-gradient(ellipse 90% 55% at 50% -5%,  #0c1f4a 0%, transparent 60%),
+        radial-gradient(ellipse 50% 40% at 15% 90%,  #080e28 0%, transparent 50%),
+        radial-gradient(ellipse 60% 35% at 85% 85%,  #060c22 0%, transparent 50%),
+        linear-gradient(180deg, #050a18 0%, #03060f 50%, #000 100%);
       pointer-events: none;
-      transition: opacity 0.2s ease;
-    }
-    .spinner-ring {
-      width: 50%;
-      height: 50%;
-      border: 3px solid rgba(255,255,255,0.15);
-      border-top-color: rgba(255,255,255,0.85);
-      border-radius: 50%;
-      animation: spin 0.75s linear infinite;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
-
-    /* ── Ball state classes ─────────────────────────────────────────────── */
-    .ball.loading .eight-wrap  { opacity: 0; }
-    .ball.loading .spinner-wrap { opacity: 1; }
-
-    .ball.bounce {
-      animation: ball-bounce 0.55s cubic-bezier(0.36,0.07,0.19,0.97) forwards;
-    }
-    @keyframes ball-bounce {
-      0%   { transform: scale(1)    translateY(0)   rotate(0deg); }
-      18%  { transform: scale(0.92) translateY(4%)  rotate(-5deg); }
-      40%  { transform: scale(1.05) translateY(-7%) rotate(4deg); }
-      58%  { transform: scale(0.97) translateY(2%)  rotate(-2deg); }
-      75%  { transform: scale(1.02) translateY(-2%) rotate(1deg); }
-      88%  { transform: scale(0.99) translateY(0.5%); }
-      100% { transform: scale(1)    translateY(0)   rotate(0deg); }
     }
 
-    .ball.error-pulse {
-      animation: error-glow 0.9s ease forwards;
-    }
-    @keyframes error-glow {
-      0%   { box-shadow: 0 0 0 3px rgba(100,190,255,0.25), 0 0 50px rgba(70,150,255,0.18), 0 0 100px rgba(40,110,220,0.10), 0 calc(var(--sz)*.52) calc(var(--sz)*.15) rgba(0,0,0,.85), 0 calc(var(--sz)*.50) calc(var(--sz)*.08) rgba(0,0,0,.95); }
-      35%  { box-shadow: 0 0 0 4px rgba(239,68,68,0.7),   0 0 70px rgba(220,50,50,0.45), 0 0 120px rgba(180,30,30,0.25), 0 calc(var(--sz)*.52) calc(var(--sz)*.15) rgba(0,0,0,.85), 0 calc(var(--sz)*.50) calc(var(--sz)*.08) rgba(0,0,0,.95); }
-      100% { box-shadow: 0 0 0 3px rgba(100,190,255,0.25), 0 0 50px rgba(70,150,255,0.18), 0 0 100px rgba(40,110,220,0.10), 0 calc(var(--sz)*.52) calc(var(--sz)*.15) rgba(0,0,0,.85), 0 calc(var(--sz)*.50) calc(var(--sz)*.08) rgba(0,0,0,.95); }
+    /* ── Stars canvas ──────────────────────────────────────────────────── */
+    #stars {
+      position: fixed; inset: 0; z-index: 1;
+      pointer-events: none;
     }
 
-    /* ── Bottom sheet ───────────────────────────────────────────────────── */
-    #sheet {
-      position: fixed;
-      left: 0; right: 0; bottom: 0;
-      max-height: 70vh;
-      background: rgba(6, 9, 18, 0.88);
-      backdrop-filter: blur(32px) saturate(180%);
-      -webkit-backdrop-filter: blur(32px) saturate(180%);
-      border-top: 1px solid rgba(255,255,255,0.08);
-      border-radius: 20px 20px 0 0;
-      box-shadow: 0 -12px 60px rgba(0,0,0,0.75);
-      transform: translateY(100%);
-      transition: transform 0.44s cubic-bezier(0.32, 0.72, 0, 1);
-      overflow: hidden;
-      display: flex;
-      flex-direction: column;
-      z-index: 20;
+    /* ── Nav ───────────────────────────────────────────────────────────── */
+    nav {
+      position: fixed; top: 0; left: 0; right: 0;
+      height: var(--nav-h); z-index: 200;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 clamp(20px, 4vw, 40px);
+      background: rgba(3, 6, 16, 0.65);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-bottom: 1px solid rgba(255,255,255,0.05);
     }
-    #sheet.open { transform: translateY(0); }
+    .nav-logo {
+      font-size: 0.80rem; font-weight: 700;
+      letter-spacing: 0.12em; text-transform: uppercase;
+      color: rgba(255,255,255,0.88);
+    }
+    .nav-links { display: flex; gap: 32px; list-style: none; }
+    .nav-links a {
+      font-size: 0.72rem; letter-spacing: 0.10em; text-transform: uppercase;
+      color: rgba(255,255,255,0.38); text-decoration: none;
+      transition: color 0.2s;
+    }
+    .nav-links a:hover { color: rgba(255,255,255,0.78); }
 
-    .handle {
+    /* ── Scene (full-screen flex column) ──────────────────────────────── */
+    .scene {
+      position: fixed; inset: 0;
+      padding-top: var(--nav-h);
+      display: flex; flex-direction: column; align-items: center;
+      z-index: 10; overflow: hidden;
+    }
+
+    /* ── Hero text ─────────────────────────────────────────────────────── */
+    .hero {
       flex-shrink: 0;
-      display: flex;
-      justify-content: center;
-      padding: 12px 0 6px;
+      text-align: center;
+      padding: clamp(32px, 6vh, 72px) 24px clamp(20px, 3vh, 36px);
+      pointer-events: none;
     }
-    .handle-bar {
-      width: 36px; height: 4px;
-      border-radius: 2px;
-      background: rgba(255,255,255,0.18);
+    .eyebrow {
+      font-size: clamp(0.60rem, 1.4vw, 0.72rem);
+      font-weight: 700; letter-spacing: 0.30em; text-transform: uppercase;
+      color: rgba(110,155,255,0.70);
+      margin-bottom: 16px;
+    }
+    .hero h1 {
+      font-size: clamp(2.2rem, 7vw, 4.4rem);
+      font-weight: 800; letter-spacing: -0.025em; line-height: 1.02;
+      background: linear-gradient(175deg, #ffffff 0%, rgba(190,210,255,0.82) 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: clamp(20px, 3vh, 32px);
     }
 
-    .card-list {
-      overflow-y: auto;
-      -webkit-overflow-scrolling: touch;
-      padding: 4px 16px 28px;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-    .card-list::-webkit-scrollbar { display: none; }
+    /* ── CTA button ────────────────────────────────────────────────────── */
+    .cta-wrap { pointer-events: auto; }
 
-    /* ── Player card ────────────────────────────────────────────────────── */
+    #ctaBtn {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 13px 36px;
+      border-radius: 99px;
+      border: 1px solid rgba(255,255,255,0.16);
+      background: rgba(255,255,255,0.07);
+      color: rgba(255,255,255,0.88);
+      font-size: 0.86rem; font-weight: 600; letter-spacing: 0.05em;
+      cursor: pointer;
+      backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+      transition: background 0.2s, border-color 0.2s, transform 0.12s, opacity 0.2s;
+      min-width: 160px; justify-content: center;
+    }
+    #ctaBtn:hover:not(:disabled) {
+      background: rgba(255,255,255,0.13);
+      border-color: rgba(255,255,255,0.28);
+    }
+    #ctaBtn:active:not(:disabled) { transform: scale(0.97); }
+    #ctaBtn:disabled { opacity: 0.45; cursor: not-allowed; }
+    #ctaBtn .cd { color: rgba(120,165,255,0.95); font-variant-numeric: tabular-nums; }
+
+    /* ── Cards zone ────────────────────────────────────────────────────── */
+    .cards-zone {
+      flex: 1; width: 100%; max-width: 900px;
+      display: flex; flex-wrap: wrap; gap: 10px;
+      justify-content: center; align-content: flex-start;
+      padding: clamp(16px,3vh,28px) clamp(16px,4vw,32px)
+               /* bottom pad = visible ball height so cards don't hide behind it */
+               calc(var(--ball-sz) * (1 - var(--ball-crop)) + 24px);
+      overflow-y: auto; -webkit-overflow-scrolling: touch;
+    }
+    .cards-zone::-webkit-scrollbar { display: none; }
+
+    /* ── Player card ───────────────────────────────────────────────────── */
+    .card-outer {
+      flex: 0 0 auto;
+      animation: card-rise 0.45s cubic-bezier(0.22,1,0.36,1) both;
+      animation-delay: calc(var(--i,0) * 42ms);
+    }
+    @keyframes card-rise {
+      from { opacity: 0; transform: translateY(22px) scale(0.95); }
+      to   { opacity: 1; transform: translateY(0)    scale(1); }
+    }
+
     .card {
-      background: rgba(255,255,255,0.045);
-      border: 1px solid rgba(255,255,255,0.075);
-      border-radius: 13px;
-      padding: 13px 15px;
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      animation: card-in 0.32s ease both;
-      animation-delay: calc(var(--i,0) * 38ms);
+      background: rgba(6,11,28,0.76);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 14px;
+      padding: 13px 16px;
+      display: flex; align-items: center; gap: 12px;
+      backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+      min-width: 185px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.4), 0 1px 0 rgba(255,255,255,0.04) inset;
+      animation: card-float 5s ease-in-out infinite;
+      animation-delay: calc(var(--i,0) * 380ms);
     }
-    @keyframes card-in {
-      from { opacity: 0; transform: translateY(16px); }
-      to   { opacity: 1; transform: translateY(0); }
+    @keyframes card-float {
+      0%, 100% { transform: translateY(0); }
+      50%       { transform: translateY(-7px); }
     }
 
     .card-info { flex: 1; min-width: 0; }
     .card-name {
-      font-size: 0.93rem; font-weight: 600;
-      color: #e8eaf2;
+      font-size: 0.875rem; font-weight: 600; color: rgba(255,255,255,0.90);
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
-    .card-line {
-      font-size: 0.75rem;
-      color: rgba(255,255,255,0.36);
-      margin-top: 3px;
-    }
-
-    .card-right {
-      display: flex; flex-direction: column;
-      align-items: flex-end; gap: 4px; flex-shrink: 0;
-    }
+    .card-line { font-size: 0.72rem; color: rgba(255,255,255,0.34); margin-top: 3px; }
+    .card-right { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex-shrink: 0; }
 
     .badge {
-      font-size: 0.68rem; font-weight: 700;
-      letter-spacing: 0.07em;
-      padding: 3px 10px; border-radius: 99px;
+      font-size: 0.65rem; font-weight: 700; letter-spacing: 0.08em;
+      padding: 3px 9px; border-radius: 99px;
     }
-    .badge.over  { background: rgba(34,197,94,0.14);  color: #4ade80; border: 1px solid rgba(34,197,94,0.28); }
-    .badge.under { background: rgba(239,68,68,0.14);  color: #f87171; border: 1px solid rgba(239,68,68,0.28); }
-    .badge.none  { background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.32); border: 1px solid rgba(255,255,255,0.10); }
+    .badge.over  { background: rgba(34,197,94,0.13);  color: #4ade80; border: 1px solid rgba(34,197,94,0.28); }
+    .badge.under { background: rgba(239,68,68,0.13);  color: #f87171; border: 1px solid rgba(239,68,68,0.28); }
+    .badge.none  { background: rgba(255,255,255,0.05); color: rgba(255,255,255,0.32); border: 1px solid rgba(255,255,255,0.10); }
+    .conf { font-size: 0.70rem; color: rgba(255,255,255,0.26); }
 
-    .conf { font-size: 0.72rem; color: rgba(255,255,255,0.28); }
-
-    /* ── Backdrop ───────────────────────────────────────────────────────── */
-    #backdrop {
-      position: fixed; inset: 0; z-index: 19;
-      display: none;
+    /* ── Ball anchor (X-centering, out of flow) ────────────────────────── */
+    .ball-anchor {
+      position: absolute;
+      bottom: 0; left: 50%;
+      transform: translateX(-50%);
+      z-index: 20;
     }
-    #backdrop.visible { display: block; }
+
+    /* ── Ball stage (Y offset + float animation) ───────────────────────── */
+    .ball-stage {
+      transform: translateY(calc(var(--ball-sz) * var(--ball-crop)));
+      animation: ball-float 6s ease-in-out infinite;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+    @keyframes ball-float {
+      0%, 100% { transform: translateY(calc(var(--ball-sz) * var(--ball-crop)));      }
+      50%       { transform: translateY(calc(var(--ball-sz) * var(--ball-crop) - 14px)); }
+    }
+
+    /* pulse on trigger */
+    .ball-stage.pulse { animation: ball-float 6s ease-in-out infinite, ball-pulse 0.55s ease; }
+    @keyframes ball-pulse {
+      0%   { filter: brightness(1)   drop-shadow(0 0  0px  rgba(140,180,255,0)); }
+      35%  { filter: brightness(1.3) drop-shadow(0 0 50px  rgba(120,170,255,0.55)); }
+      100% { filter: brightness(1)   drop-shadow(0 0  0px  rgba(140,180,255,0)); }
+    }
+
+    /* error pulse */
+    .ball-stage.err { animation: ball-float 6s ease-in-out infinite, ball-err 0.9s ease; }
+    @keyframes ball-err {
+      0%   { filter: brightness(1)   drop-shadow(0 0  0px rgba(239,68,68,0)); }
+      30%  { filter: brightness(1.1) drop-shadow(0 0 55px rgba(239,68,68,0.65)); }
+      100% { filter: brightness(1)   drop-shadow(0 0  0px rgba(239,68,68,0)); }
+    }
+
+    /* ── Sphere shell ──────────────────────────────────────────────────── */
+    .ball {
+      width: var(--ball-sz); height: var(--ball-sz);
+      border-radius: 50%;
+      overflow: hidden;
+      position: relative;
+
+      /* Deep black base — slight warm center */
+      background:
+        radial-gradient(circle at 42% 38%, #1f1f1f 0%, #0e0e0e 38%, #050505 66%, #000 100%);
+
+      /* Atmospheric glow (outside the overflow clip) + ground shadow */
+      box-shadow:
+        0 0  50px 14px rgba(85,125,255,0.20),
+        0 0  90px 30px rgba(65,100,230,0.13),
+        0 0 160px 60px rgba(45, 80,200,0.08),
+        0 0 260px 90px rgba(25, 55,160,0.04),
+        0 calc(var(--ball-sz)*0.43) calc(var(--ball-sz)*0.10) rgba(0,0,0,0.95),
+        0 calc(var(--ball-sz)*0.47) calc(var(--ball-sz)*0.18) rgba(0,0,0,0.75);
+    }
+
+    /* Primary specular — bright white ellipse, top-left */
+    .sph-spec1 {
+      position: absolute; inset: 0;
+      background: radial-gradient(
+        ellipse 52% 43% at 26% 20%,
+        rgba(255,255,255,0.76) 0%,
+        rgba(245,250,255,0.38) 18%,
+        rgba(210,230,255,0.12) 38%,
+        transparent 58%
+      );
+      pointer-events: none;
+    }
+
+    /* Secondary softer highlight — slightly lower, smaller */
+    .sph-spec2 {
+      position: absolute; inset: 0;
+      background: radial-gradient(
+        ellipse 36% 28% at 40% 36%,
+        rgba(255,255,255,0.16) 0%,
+        rgba(220,235,255,0.06) 40%,
+        transparent 66%
+      );
+      pointer-events: none;
+    }
+
+    /* Dark rear fill — opposite corner from light */
+    .sph-rear {
+      position: absolute; inset: 0;
+      background: radial-gradient(
+        ellipse 50% 45% at 74% 76%,
+        rgba(0,0,20,0.30) 0%,
+        transparent 58%
+      );
+      pointer-events: none;
+    }
+
+    /* Rim vignette */
+    .sph-rim {
+      position: absolute; inset: 0;
+      background: radial-gradient(
+        circle at 50% 50%,
+        transparent 50%,
+        rgba(0,0,14,0.35) 66%,
+        rgba(0,0,10,0.68) 82%,
+        rgba(0,0, 6,0.92) 96%
+      );
+      pointer-events: none;
+    }
+
+    /* ── White 8-ball circle ───────────────────────────────────────────── */
+    .eight-wrap {
+      position: absolute; top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      width: 33%; height: 33%;
+      border-radius: 50%; z-index: 4;
+
+      background: radial-gradient(
+        ellipse 62% 52% at 36% 30%,
+        #ffffff 0%, #f5f5f5 45%, #dedede 100%
+      );
+      box-shadow:
+        0 3px 14px rgba(0,0,0,0.65),
+        0 1px 4px  rgba(0,0,0,0.55),
+        inset 0  1px 0   rgba(255,255,255,1),
+        inset 0 -3px 8px rgba(0,0,0,0.22);
+      display: flex; align-items: center; justify-content: center;
+      transition: opacity 0.22s ease;
+    }
+    .eight {
+      font-size: calc(var(--ball-sz) * 0.108);
+      font-weight: 900; font-style: italic;
+      font-family: Georgia, "Times New Roman", serif;
+      color: #111;
+      text-shadow: 0 1px 3px rgba(0,0,0,0.28);
+      line-height: 1;
+    }
+
+    /* ── Loading spinner ───────────────────────────────────────────────── */
+    .spinner-wrap {
+      position: absolute; top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      width: 33%; height: 33%;
+      border-radius: 50%; z-index: 5;
+      display: flex; align-items: center; justify-content: center;
+      opacity: 0; pointer-events: none; transition: opacity 0.2s;
+    }
+    .spinner-ring {
+      width: 46%; height: 46%;
+      border: 3px solid rgba(255,255,255,0.12);
+      border-top-color: rgba(255,255,255,0.82);
+      border-radius: 50%;
+      animation: spin 0.72s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .ball.loading .eight-wrap   { opacity: 0; }
+    .ball.loading .spinner-wrap { opacity: 1; }
+
   </style>
 </head>
 <body>
 
-<div id="stage">
-  <div class="ball" id="ball" role="button" tabindex="0" aria-label="Get predictions">
+<canvas id="stars"></canvas>
 
-    <!-- 1. Ocean base -->
-    <div class="ocean"></div>
+<nav>
+  <span class="nav-logo">Podz Liability Fund</span>
+  <ul class="nav-links">
+    <li><a href="#">Model</a></li>
+    <li><a href="#">About</a></li>
+  </ul>
+</nav>
 
-    <!-- 2. Rotating continents (two tiles for seamless loop) -->
-    <svg class="continents" id="continents"
-         viewBox="0 0 200 100"
-         preserveAspectRatio="xMidYMid slice"
-         xmlns="http://www.w3.org/2000/svg">
-      <defs>
-        <!-- Sphere-edge fade: make continents near left/right edges look like they wrap around -->
-        <linearGradient id="edgeFade" x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0%"   stop-color="#000" stop-opacity="0.55"/>
-          <stop offset="8%"   stop-color="#000" stop-opacity="0"/>
-          <stop offset="92%"  stop-color="#000" stop-opacity="0"/>
-          <stop offset="100%" stop-color="#000" stop-opacity="0.55"/>
-        </linearGradient>
-      </defs>
+<div class="scene">
 
-      <!-- ── TILE 1 (x: 0–100) ── -->
-      <g fill="#3d7d34" stroke="none" opacity="0.92">
-
-        <!-- Greenland -->
-        <path d="M30,1 C36,0 43,2 44,8 L43,15 L37,18 L30,14 L28,7 Z"/>
-
-        <!-- Iceland -->
-        <path d="M41,10 C43,8 47,9 48,12 L47,16 L43,16 Z"/>
-
-        <!-- North America -->
-        <path d="
-          M 6,13
-          C 10,5  20,3  27,6
-          L 33,11 34,21
-          C 33,27  31,33  29,40
-          L 26,46
-          C 22,48  19,46  18,43
-          L 16,36
-          C 14,28  14,22  16,18
-          C 14,16  9,16   6,18
-          Z
-        "/>
-
-        <!-- Gulf of Mexico indent detail -->
-        <path d="M18,43 C19,46 22,48 25,47 L25,50 L20,50 L18,46 Z"/>
-
-        <!-- Florida peninsula -->
-        <path d="M26,43 L28,44 L27,48 L25,48 Z"/>
-
-        <!-- Central America -->
-        <path d="M19,50 C22,49 25,50 25,53 L23,58 L20,56 Z"/>
-
-        <!-- South America -->
-        <path d="
-          M 22,58
-          C 27,55  36,55  41,60
-          L 44,72  43,84  38,92
-          L 31,92  25,84  21,70
-          Z
-        "/>
-
-        <!-- Europe (with Iberian + Scandinavian hints) -->
-        <path d="
-          M 46,13
-          C 50,9   57,10  62,14
-          L 64,21  62,27
-          L 58,31  56,29  58,25  54,27  52,25
-          L 49,22  47,18
-          Z
-        "/>
-
-        <!-- Scandinavia -->
-        <path d="M 50,9 C 52,5 56,5 58,8 L 58,13 L 54,14 L 50,12 Z"/>
-
-        <!-- UK outline -->
-        <path d="M 43,13 C 45,11 48,12 48,15 L 47,19 L 44,18 Z"/>
-
-        <!-- Africa -->
-        <path d="
-          M 46,28
-          C 53,24  63,25  67,31
-          L 69,45  67,60
-          L 62,74  55,77
-          L 49,73  44,61
-          L 43,45
-          Z
-        "/>
-
-        <!-- Madagascar -->
-        <path d="M 68,52 C 70,49 72,50 73,54 L 72,60 L 70,60 L 68,56 Z"/>
-
-        <!-- Arabian Peninsula -->
-        <path d="M 63,29 L 70,27 L 75,34 L 71,45 L 64,44 L 62,36 Z"/>
-
-        <!-- Asia (main mass) -->
-        <path d="
-          M 62,10
-          C 71,5   86,4   98,8
-          L 100,16 100,40
-          L 96,50  85,52
-          L 74,50  66,47
-          L 63,42  63,35
-          L 66,27  64,20
-          Z
-        "/>
-
-        <!-- Indian subcontinent -->
-        <path d="M 65,32 L 73,29 L 78,36 L 77,49 L 72,53 L 67,49 L 65,40 Z"/>
-
-        <!-- Indochina peninsula -->
-        <path d="M 79,40 L 85,38 L 87,44 L 85,53 L 80,51 Z"/>
-
-        <!-- Japan (rough) -->
-        <path d="M 91,19 C 94,17 97,19 98,23 L 97,28 L 93,28 Z"/>
-
-        <!-- Sri Lanka -->
-        <path d="M 76,54 L 78,53 L 79,56 L 77,58 Z"/>
-
-        <!-- Australia -->
-        <path d="
-          M 78,60
-          C 85,55  93,56  97,62
-          L 99,72  97,80
-          L 88,84  79,79
-          L 75,70  76,62
-          Z
-        "/>
-
-        <!-- Tasmania -->
-        <path d="M 87,86 L 90,85 L 91,89 L 88,90 Z"/>
-
-        <!-- New Zealand (north island hint) -->
-        <path d="M 99,72 C 100,70 100,74 99,76 L 98,75 Z"/>
-
-      </g>
-
-      <!-- ── TILE 2 (x: 100–200, exact copies shifted +100) ── -->
-      <g fill="#3d7d34" stroke="none" opacity="0.92" transform="translate(100,0)">
-
-        <path d="M30,1 C36,0 43,2 44,8 L43,15 L37,18 L30,14 L28,7 Z"/>
-        <path d="M41,10 C43,8 47,9 48,12 L47,16 L43,16 Z"/>
-        <path d="M 6,13 C 10,5 20,3 27,6 L 33,11 34,21 C 33,27 31,33 29,40 L 26,46 C 22,48 19,46 18,43 L 16,36 C 14,28 14,22 16,18 C 14,16 9,16 6,18 Z"/>
-        <path d="M18,43 C19,46 22,48 25,47 L25,50 L20,50 L18,46 Z"/>
-        <path d="M26,43 L28,44 L27,48 L25,48 Z"/>
-        <path d="M19,50 C22,49 25,50 25,53 L23,58 L20,56 Z"/>
-        <path d="M 22,58 C 27,55 36,55 41,60 L 44,72 43,84 38,92 L 31,92 25,84 21,70 Z"/>
-        <path d="M 46,13 C 50,9 57,10 62,14 L 64,21 62,27 L 58,31 56,29 58,25 54,27 52,25 L 49,22 47,18 Z"/>
-        <path d="M 50,9 C 52,5 56,5 58,8 L 58,13 L 54,14 L 50,12 Z"/>
-        <path d="M 43,13 C 45,11 48,12 48,15 L 47,19 L 44,18 Z"/>
-        <path d="M 46,28 C 53,24 63,25 67,31 L 69,45 67,60 L 62,74 55,77 L 49,73 44,61 L 43,45 Z"/>
-        <path d="M 68,52 C 70,49 72,50 73,54 L 72,60 L 70,60 L 68,56 Z"/>
-        <path d="M 63,29 L 70,27 L 75,34 L 71,45 L 64,44 L 62,36 Z"/>
-        <path d="M 62,10 C 71,5 86,4 98,8 L 100,16 100,40 L 96,50 85,52 L 74,50 66,47 L 63,42 63,35 L 66,27 64,20 Z"/>
-        <path d="M 65,32 L 73,29 L 78,36 L 77,49 L 72,53 L 67,49 L 65,40 Z"/>
-        <path d="M 79,40 L 85,38 L 87,44 L 85,53 L 80,51 Z"/>
-        <path d="M 91,19 C 94,17 97,19 98,23 L 97,28 L 93,28 Z"/>
-        <path d="M 76,54 L 78,53 L 79,56 L 77,58 Z"/>
-        <path d="M 78,60 C 85,55 93,56 97,62 L 99,72 97,80 L 88,84 79,79 L 75,70 76,62 Z"/>
-        <path d="M 87,86 L 90,85 L 91,89 L 88,90 Z"/>
-        <path d="M 99,72 C 100,70 100,74 99,76 L 98,75 Z"/>
-
-      </g>
-
-      <!-- Edge-wrap fade overlay (makes globe feel round, not flat) -->
-      <rect x="0" y="0" width="200" height="100" fill="url(#edgeFade)"/>
-
-    </svg>
-
-    <!-- 3. Lighting — specular + rim -->
-    <div class="lighting"></div>
-
-    <!-- 4. White circle + 8 -->
-    <div class="eight-wrap" id="eightWrap">
-      <span class="eight">8</span>
+  <section class="hero">
+    <p class="eyebrow">Tonight's Picks</p>
+    <h1>Shake to Predict</h1>
+    <div class="cta-wrap">
+      <button id="ctaBtn">Get Predictions</button>
     </div>
+  </section>
 
-    <!-- 5. Loading spinner -->
-    <div class="spinner-wrap" id="spinnerWrap">
-      <div class="spinner-ring"></div>
+  <div class="cards-zone" id="cardsZone"></div>
+
+  <!-- Ball: absolutely anchored to bottom, X-centered via .ball-anchor -->
+  <div class="ball-anchor">
+    <div class="ball-stage" id="ballStage">
+      <div class="ball" id="ball">
+        <div class="sph-spec1"></div>
+        <div class="sph-spec2"></div>
+        <div class="sph-rear"></div>
+        <div class="sph-rim"></div>
+        <div class="eight-wrap">
+          <span class="eight">8</span>
+        </div>
+        <div class="spinner-wrap">
+          <div class="spinner-ring"></div>
+        </div>
+      </div>
     </div>
-
   </div>
-</div>
 
-<div id="backdrop"></div>
-
-<div id="sheet" role="dialog" aria-label="Predictions">
-  <div class="handle"><div class="handle-bar"></div></div>
-  <div class="card-list" id="cardList"></div>
 </div>
 
 <script>
 (function () {
   'use strict';
 
+  /* ── Config ─────────────────────────────────────────────────────────── */
   const API_BASE = window.location.hostname === 'localhost'
     ? ''
     : 'https://your-render-app.onrender.com';
 
-  const COOLDOWN_MS  = 4000;
-  const SHAKE_THRESH = 20;
+  const COOLDOWN_MS = 4000;
 
-  const ball       = document.getElementById('ball');
-  const continents = document.getElementById('continents');
-  const sheet      = document.getElementById('sheet');
-  const backdrop   = document.getElementById('backdrop');
-  const cardList   = document.getElementById('cardList');
+  /* ── Elements ───────────────────────────────────────────────────────── */
+  const ballStage = document.getElementById('ballStage');
+  const ball      = document.getElementById('ball');
+  const ctaBtn    = document.getElementById('ctaBtn');
+  const cardsZone = document.getElementById('cardsZone');
 
   let loading    = false;
   let cooldownAt = 0;
+  let cdTimer    = null;
 
-  // ── Shake ──────────────────────────────────────────────────────────────
+  /* ── Starfield (canvas, twinkling) ──────────────────────────────────── */
+  (function () {
+    const canvas = document.getElementById('stars');
+    const ctx    = canvas.getContext('2d');
+    let W, H;
+
+    /* Three depth layers — size + brightness vary */
+    const stars = Array.from({ length: 180 }, () => {
+      const layer = Math.random() < 0.6 ? 0 : Math.random() < 0.7 ? 1 : 2;
+      return {
+        x:     Math.random(),
+        y:     Math.random(),
+        r:     [0.4, 0.8, 1.3][layer] + Math.random() * 0.4,
+        base:  [0.25, 0.45, 0.70][layer],
+        amp:   [0.10, 0.18, 0.25][layer],
+        phase: Math.random() * Math.PI * 2,
+        freq:  0.05 + Math.random() * 0.25,
+      };
+    });
+
+    function resize() {
+      W = canvas.width  = window.innerWidth;
+      H = canvas.height = window.innerHeight;
+    }
+
+    let then = 0;
+    function draw(now) {
+      requestAnimationFrame(draw);
+      const t = now / 1000;
+      ctx.clearRect(0, 0, W, H);
+      for (const s of stars) {
+        const alpha = s.base + Math.sin(t * s.freq + s.phase) * s.amp;
+        ctx.globalAlpha = Math.min(1, Math.max(0, alpha));
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        ctx.arc(s.x * W, s.y * H, s.r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    window.addEventListener('resize', resize);
+    resize();
+    requestAnimationFrame(draw);
+  })();
+
+  /* ── Shake detection ─────────────────────────────────────────────────── */
   let lastAcc = { x: 0, y: 0, z: 0 };
   function onMotion(e) {
     const a = e.accelerationIncludingGravity;
     if (!a) return;
-    const d = Math.abs((a.x||0) - lastAcc.x) + Math.abs((a.y||0) - lastAcc.y) + Math.abs((a.z||0) - lastAcc.z);
+    const d = Math.abs((a.x||0)-lastAcc.x) + Math.abs((a.y||0)-lastAcc.y) + Math.abs((a.z||0)-lastAcc.z);
     lastAcc = { x: a.x||0, y: a.y||0, z: a.z||0 };
-    if (d > SHAKE_THRESH) trigger();
+    if (d > 20) trigger();
   }
-
   let motionBound = false;
   function bindMotion() {
     if (motionBound) return;
@@ -535,90 +467,91 @@
     }
   }
 
-  // ── Input ──────────────────────────────────────────────────────────────
-  ball.addEventListener('click',   () => { bindMotion(); trigger(); });
-  ball.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); trigger(); } });
-  backdrop.addEventListener('click', closeSheet);
+  /* ── Inputs ──────────────────────────────────────────────────────────── */
+  ctaBtn.addEventListener('click',    () => { bindMotion(); trigger(); });
+  ballStage.addEventListener('click', () => { bindMotion(); trigger(); });
 
-  let touchStartY = 0;
-  sheet.addEventListener('touchstart', e => { touchStartY = e.touches[0].clientY; }, { passive: true });
-  sheet.addEventListener('touchend',   e => { if (e.changedTouches[0].clientY - touchStartY > 60) closeSheet(); }, { passive: true });
-
-  function closeSheet() {
-    sheet.classList.remove('open');
-    backdrop.classList.remove('visible');
-  }
-
-  // ── Trigger ────────────────────────────────────────────────────────────
+  /* ── Trigger ─────────────────────────────────────────────────────────── */
   function trigger() {
     if (loading || Date.now() < cooldownAt) return;
     fetchPredictions();
   }
 
-  // ── Fetch ──────────────────────────────────────────────────────────────
+  /* ── Fetch ───────────────────────────────────────────────────────────── */
   async function fetchPredictions() {
     loading = true;
-    closeSheet();
+    ctaBtn.disabled = true;
+    ctaBtn.textContent = '…';
 
-    // Bounce ball + speed up globe
-    ball.classList.remove('bounce', 'error-pulse');
-    void ball.offsetWidth;
-    ball.classList.add('bounce');
-    continents.classList.add('fast');
-    setTimeout(() => continents.classList.remove('fast'), 1400);
+    /* Ball pulse */
+    ['pulse', 'err'].forEach(c => ballStage.classList.remove(c));
+    void ballStage.offsetWidth;
+    ballStage.classList.add('pulse');
+    ballStage.addEventListener('animationend', e => {
+      if (e.animationName === 'ball-pulse') ballStage.classList.remove('pulse');
+    }, { once: true });
 
-    // Switch to loading state after bounce settles
-    setTimeout(() => ball.classList.add('loading'), 320);
+    ball.classList.add('loading');
 
     try {
       const res = await fetch(`${API_BASE}/predict`, {
-        headers: { 'Accept': 'application/json' },
+        headers: { Accept: 'application/json' },
         signal: AbortSignal.timeout(15000),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       renderCards(data.players || []);
-      openSheet();
     } catch (_) {
-      ball.classList.remove('loading');
-      void ball.offsetWidth;
-      ball.classList.add('error-pulse');
-      ball.addEventListener('animationend', () => ball.classList.remove('error-pulse'), { once: true });
+      ['pulse'].forEach(c => ballStage.classList.remove(c));
+      void ballStage.offsetWidth;
+      ballStage.classList.add('err');
+      ballStage.addEventListener('animationend', e => {
+        if (e.animationName === 'ball-err') ballStage.classList.remove('err');
+      }, { once: true });
     } finally {
       loading    = false;
       cooldownAt = Date.now() + COOLDOWN_MS;
       ball.classList.remove('loading');
-      ball.classList.remove('bounce');
+      startCountdown();
     }
   }
 
-  // ── Render ─────────────────────────────────────────────────────────────
+  /* ── Countdown ────────────────────────────────────────────────────────── */
+  function startCountdown() {
+    clearInterval(cdTimer);
+    cdTimer = setInterval(() => {
+      const rem = Math.ceil((cooldownAt - Date.now()) / 1000);
+      if (rem <= 0) {
+        clearInterval(cdTimer);
+        ctaBtn.disabled = false;
+        ctaBtn.textContent = 'Get Predictions';
+      } else {
+        ctaBtn.innerHTML = `<span class="cd">${rem}s</span>`;
+      }
+    }, 250);
+  }
+
+  /* ── Render cards ─────────────────────────────────────────────────────── */
   function renderCards(players) {
-    if (!players.length) {
-      cardList.innerHTML = '<p style="color:rgba(255,255,255,.3);font-size:.85rem;text-align:center;padding:20px 0">No data available</p>';
-      return;
-    }
-    cardList.innerHTML = players.map((p, i) => {
+    if (!players.length) return;
+    cardsZone.innerHTML = players.map((p, i) => {
       const rec  = p.recommendation;
       const cls  = rec === 'OVER' ? 'over' : rec === 'UNDER' ? 'under' : 'none';
       const line = p.prop_line != null ? `${p.prop_line} pts` : '–';
       const conf = p.confidence != null ? `${Math.round(p.confidence * 100)}%` : '';
-      return `<div class="card" style="--i:${i}">
-        <div class="card-info">
-          <div class="card-name">${esc(p.name)}</div>
-          <div class="card-line">${esc(line)}</div>
-        </div>
-        <div class="card-right">
-          <span class="badge ${cls}">${esc(rec || '–')}</span>
-          ${conf ? `<span class="conf">${conf}</span>` : ''}
+      return `<div class="card-outer" style="--i:${i}">
+        <div class="card" style="--i:${i}">
+          <div class="card-info">
+            <div class="card-name">${esc(p.name)}</div>
+            <div class="card-line">${esc(line)}</div>
+          </div>
+          <div class="card-right">
+            <span class="badge ${cls}">${esc(rec || '–')}</span>
+            ${conf ? `<span class="conf">${conf}</span>` : ''}
+          </div>
         </div>
       </div>`;
     }).join('');
-  }
-
-  function openSheet() {
-    sheet.classList.add('open');
-    backdrop.classList.add('visible');
   }
 
   function esc(s) {
