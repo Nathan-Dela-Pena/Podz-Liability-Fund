@@ -8,9 +8,8 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --nav-h:   56px;
-      --ball-sz: min(70vmin, 520px);
-      --ball-crop: 0.40; /* fraction hidden below viewport */
+      --ball-sz:   min(70vmin, 520px);
+      --ball-crop: 0.40;
     }
 
     html, body {
@@ -22,7 +21,6 @@
       -webkit-font-smoothing: antialiased;
     }
 
-    /* ── Space background ──────────────────────────────────────────────── */
     body::before {
       content: '';
       position: fixed; inset: 0; z-index: 0;
@@ -34,7 +32,7 @@
       pointer-events: none;
     }
 
-    /* ── Scene (full-screen flex column) ──────────────────────────────── */
+    /* ── Scene ─────────────────────────────────────────────────────────── */
     .scene {
       position: fixed; inset: 0;
       display: flex; flex-direction: column; align-items: center;
@@ -43,116 +41,37 @@
 
     /* ── Hero text ─────────────────────────────────────────────────────── */
     .hero {
-      flex-shrink: 0;
-      text-align: center;
-      padding: clamp(32px, 6vh, 72px) 24px clamp(20px, 3vh, 36px);
+      flex-shrink: 0; text-align: center;
+      padding: clamp(32px,6vh,72px) 24px clamp(20px,3vh,36px);
+      pointer-events: none;
+      transition: opacity 0.5s ease, transform 0.5s ease;
+    }
+    .hero.hidden {
+      opacity: 0;
+      transform: translateY(-12px);
       pointer-events: none;
     }
     .eyebrow {
-      font-size: clamp(0.60rem, 1.4vw, 0.72rem);
+      font-size: clamp(0.60rem,1.4vw,0.72rem);
       font-weight: 700; letter-spacing: 0.30em; text-transform: uppercase;
       color: rgba(110,155,255,0.70);
       margin-bottom: 16px;
     }
     .hero h1 {
-      font-size: clamp(2.2rem, 7vw, 4.4rem);
+      font-size: clamp(2.2rem,7vw,4.4rem);
       font-weight: 800; letter-spacing: -0.025em; line-height: 1.02;
       background: linear-gradient(175deg, #ffffff 0%, rgba(190,210,255,0.82) 100%);
       -webkit-background-clip: text; -webkit-text-fill-color: transparent;
       background-clip: text;
-      margin-bottom: clamp(20px, 3vh, 32px);
     }
 
-    /* ── CTA button ────────────────────────────────────────────────────── */
-    .cta-wrap { pointer-events: auto; }
-
-    #ctaBtn {
-      display: inline-flex; align-items: center; gap: 8px;
-      padding: 13px 36px;
-      border-radius: 99px;
-      border: 1px solid rgba(255,255,255,0.16);
-      background: rgba(255,255,255,0.07);
-      color: rgba(255,255,255,0.88);
-      font-size: 0.86rem; font-weight: 600; letter-spacing: 0.05em;
-      cursor: pointer;
-      backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
-      transition: background 0.2s, border-color 0.2s, transform 0.12s, opacity 0.2s;
-      min-width: 160px; justify-content: center;
-    }
-    #ctaBtn:hover:not(:disabled) {
-      background: rgba(255,255,255,0.13);
-      border-color: rgba(255,255,255,0.28);
-    }
-    #ctaBtn:active:not(:disabled) { transform: scale(0.97); }
-    #ctaBtn:disabled { opacity: 0.45; cursor: not-allowed; }
-    #ctaBtn .cd { color: rgba(120,165,255,0.95); font-variant-numeric: tabular-nums; }
-
-    /* ── Cards zone ────────────────────────────────────────────────────── */
-    .cards-zone {
-      flex: 1; width: 100%; max-width: 900px;
-      display: flex; flex-wrap: wrap; gap: 10px;
-      justify-content: center; align-content: flex-start;
-      padding: clamp(16px,3vh,28px) clamp(16px,4vw,32px)
-               /* bottom pad = visible ball height so cards don't hide behind it */
-               calc(var(--ball-sz) * (1 - var(--ball-crop)) + 24px);
-      overflow-y: auto; -webkit-overflow-scrolling: touch;
-    }
-    .cards-zone::-webkit-scrollbar { display: none; }
-
-    /* ── Player card ───────────────────────────────────────────────────── */
-    .card-outer {
-      flex: 0 0 auto;
-      animation: card-rise 0.45s cubic-bezier(0.22,1,0.36,1) both;
-      animation-delay: calc(var(--i,0) * 42ms);
-    }
-    @keyframes card-rise {
-      from { opacity: 0; transform: translateY(22px) scale(0.95); }
-      to   { opacity: 1; transform: translateY(0)    scale(1); }
-    }
-
-    .card {
-      background: rgba(6,11,28,0.76);
-      border: 1px solid rgba(255,255,255,0.08);
-      border-radius: 14px;
-      padding: 13px 16px;
-      display: flex; align-items: center; gap: 12px;
-      backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
-      min-width: 185px;
-      box-shadow: 0 4px 24px rgba(0,0,0,0.4), 0 1px 0 rgba(255,255,255,0.04) inset;
-      animation: card-float 5s ease-in-out infinite;
-      animation-delay: calc(var(--i,0) * 380ms);
-    }
-    @keyframes card-float {
-      0%, 100% { transform: translateY(0); }
-      50%       { transform: translateY(-7px); }
-    }
-
-    .card-info { flex: 1; min-width: 0; }
-    .card-name {
-      font-size: 0.875rem; font-weight: 600; color: rgba(255,255,255,0.90);
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    }
-    .card-line { font-size: 0.72rem; color: rgba(255,255,255,0.34); margin-top: 3px; }
-    .card-right { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex-shrink: 0; }
-
-    .badge {
-      font-size: 0.65rem; font-weight: 700; letter-spacing: 0.08em;
-      padding: 3px 9px; border-radius: 99px;
-    }
-    .badge.over  { background: rgba(34,197,94,0.13);  color: #4ade80; border: 1px solid rgba(34,197,94,0.28); }
-    .badge.under { background: rgba(239,68,68,0.13);  color: #f87171; border: 1px solid rgba(239,68,68,0.28); }
-    .badge.none  { background: rgba(255,255,255,0.05); color: rgba(255,255,255,0.32); border: 1px solid rgba(255,255,255,0.10); }
-    .conf { font-size: 0.70rem; color: rgba(255,255,255,0.26); }
-
-    /* ── Ball anchor (X-centering, out of flow) ────────────────────────── */
+    /* ── Ball anchor ───────────────────────────────────────────────────── */
     .ball-anchor {
-      position: absolute;
-      bottom: 0; left: 50%;
+      position: absolute; bottom: 0; left: 50%;
       transform: translateX(-50%);
       z-index: 20;
     }
 
-    /* ── Ball stage (Y offset + float animation) ───────────────────────── */
     .ball-stage {
       transform: translateY(calc(var(--ball-sz) * var(--ball-crop)));
       animation: ball-float 6s ease-in-out infinite;
@@ -161,19 +80,17 @@
       user-select: none;
     }
     @keyframes ball-float {
-      0%, 100% { transform: translateY(calc(var(--ball-sz) * var(--ball-crop)));      }
-      50%       { transform: translateY(calc(var(--ball-sz) * var(--ball-crop) - 14px)); }
+      0%,100% { transform: translateY(calc(var(--ball-sz) * var(--ball-crop))); }
+      50%     { transform: translateY(calc(var(--ball-sz) * var(--ball-crop) - 14px)); }
     }
 
-    /* pulse on trigger */
     .ball-stage.pulse { animation: ball-float 6s ease-in-out infinite, ball-pulse 0.55s ease; }
     @keyframes ball-pulse {
-      0%   { filter: brightness(1)   drop-shadow(0 0  0px  rgba(140,180,255,0)); }
-      35%  { filter: brightness(1.3) drop-shadow(0 0 50px  rgba(120,170,255,0.55)); }
-      100% { filter: brightness(1)   drop-shadow(0 0  0px  rgba(140,180,255,0)); }
+      0%   { filter: brightness(1)   drop-shadow(0 0  0px rgba(140,180,255,0)); }
+      35%  { filter: brightness(1.3) drop-shadow(0 0 50px rgba(120,170,255,0.55)); }
+      100% { filter: brightness(1)   drop-shadow(0 0  0px rgba(140,180,255,0)); }
     }
 
-    /* error pulse */
     .ball-stage.err { animation: ball-float 6s ease-in-out infinite, ball-err 0.9s ease; }
     @keyframes ball-err {
       0%   { filter: brightness(1)   drop-shadow(0 0  0px rgba(239,68,68,0)); }
@@ -181,105 +98,105 @@
       100% { filter: brightness(1)   drop-shadow(0 0  0px rgba(239,68,68,0)); }
     }
 
-    /* ── Sphere shell ──────────────────────────────────────────────────── */
+    /* ── Ball sphere ───────────────────────────────────────────────────── */
     .ball {
       width: var(--ball-sz); height: var(--ball-sz);
-      border-radius: 50%;
-      overflow: hidden;
-      position: relative;
-
-      /* Deep black base — slight warm center */
-      background:
-        radial-gradient(circle at 42% 38%, #1f1f1f 0%, #0e0e0e 38%, #050505 66%, #000 100%);
-
-      /* Atmospheric glow (outside the overflow clip) + ground shadow */
+      border-radius: 50%; overflow: hidden; position: relative;
+      background: radial-gradient(circle at 42% 38%, #1f1f1f 0%, #0e0e0e 38%, #050505 66%, #000 100%);
       box-shadow:
         0 0  50px 14px rgba(85,125,255,0.20),
         0 0  90px 30px rgba(65,100,230,0.13),
-        0 0 160px 60px rgba(45, 80,200,0.08),
-        0 0 260px 90px rgba(25, 55,160,0.04),
+        0 0 160px 60px rgba(45,80,200,0.08),
+        0 0 260px 90px rgba(25,55,160,0.04),
         0 calc(var(--ball-sz)*0.43) calc(var(--ball-sz)*0.10) rgba(0,0,0,0.95),
         0 calc(var(--ball-sz)*0.47) calc(var(--ball-sz)*0.18) rgba(0,0,0,0.75);
     }
-
-    /* Primary specular — bright white ellipse, top-left */
     .sph-spec1 {
-      position: absolute; inset: 0;
-      background: radial-gradient(
-        ellipse 52% 43% at 26% 20%,
-        rgba(255,255,255,0.76) 0%,
-        rgba(245,250,255,0.38) 18%,
-        rgba(210,230,255,0.12) 38%,
-        transparent 58%
-      );
-      pointer-events: none;
+      position: absolute; inset: 0; pointer-events: none;
+      background: radial-gradient(ellipse 52% 43% at 26% 20%,
+        rgba(255,255,255,0.76) 0%, rgba(245,250,255,0.38) 18%,
+        rgba(210,230,255,0.12) 38%, transparent 58%);
     }
-
-    /* Secondary softer highlight — slightly lower, smaller */
     .sph-spec2 {
-      position: absolute; inset: 0;
-      background: radial-gradient(
-        ellipse 36% 28% at 40% 36%,
-        rgba(255,255,255,0.16) 0%,
-        rgba(220,235,255,0.06) 40%,
-        transparent 66%
-      );
-      pointer-events: none;
+      position: absolute; inset: 0; pointer-events: none;
+      background: radial-gradient(ellipse 36% 28% at 40% 36%,
+        rgba(255,255,255,0.16) 0%, rgba(220,235,255,0.06) 40%, transparent 66%);
     }
-
-    /* Dark rear fill — opposite corner from light */
     .sph-rear {
-      position: absolute; inset: 0;
-      background: radial-gradient(
-        ellipse 50% 45% at 74% 76%,
-        rgba(0,0,20,0.30) 0%,
-        transparent 58%
-      );
-      pointer-events: none;
+      position: absolute; inset: 0; pointer-events: none;
+      background: radial-gradient(ellipse 50% 45% at 74% 76%,
+        rgba(0,0,20,0.30) 0%, transparent 58%);
     }
-
-    /* Rim vignette */
     .sph-rim {
-      position: absolute; inset: 0;
-      background: radial-gradient(
-        circle at 50% 50%,
-        transparent 50%,
-        rgba(0,0,14,0.35) 66%,
-        rgba(0,0,10,0.68) 82%,
-        rgba(0,0, 6,0.92) 96%
-      );
-      pointer-events: none;
+      position: absolute; inset: 0; pointer-events: none;
+      background: radial-gradient(circle at 50% 50%,
+        transparent 50%, rgba(0,0,14,0.35) 66%,
+        rgba(0,0,10,0.68) 82%, rgba(0,0,6,0.92) 96%);
     }
 
-    /* ── White 8-ball circle ───────────────────────────────────────────── */
-    .eight-wrap {
+    /* ── White circle ──────────────────────────────────────────────────── */
+    .circle-wrap {
       position: absolute; top: 50%; left: 50%;
       transform: translate(-50%, -50%);
       width: 33%; height: 33%;
       border-radius: 50%; z-index: 4;
-
-      background: radial-gradient(
-        ellipse 62% 52% at 36% 30%,
-        #ffffff 0%, #f5f5f5 45%, #dedede 100%
-      );
+      background: radial-gradient(ellipse 62% 52% at 36% 30%,
+        #ffffff 0%, #f5f5f5 45%, #dedede 100%);
       box-shadow:
-        0 3px 14px rgba(0,0,0,0.65),
-        0 1px 4px  rgba(0,0,0,0.55),
+        0 3px 14px rgba(0,0,0,0.65), 0 1px 4px rgba(0,0,0,0.55),
         inset 0  1px 0   rgba(255,255,255,1),
         inset 0 -3px 8px rgba(0,0,0,0.22);
       display: flex; align-items: center; justify-content: center;
-      transition: opacity 0.22s ease;
+      overflow: hidden;
     }
+
+    /* The "8" — default state */
     .eight {
+      position: absolute;
       font-size: calc(var(--ball-sz) * 0.108);
       font-weight: 900; font-style: italic;
       font-family: Georgia, "Times New Roman", serif;
       color: #111;
       text-shadow: 0 1px 3px rgba(0,0,0,0.28);
       line-height: 1;
+      transition: opacity 0.3s ease;
     }
 
-    /* ── Loading spinner ───────────────────────────────────────────────── */
+    /* Pick display — shown inside circle while cycling */
+    .pick-display {
+      position: absolute; inset: 0;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 0;
+      opacity: 0;
+      transition: opacity 0.35s ease;
+      padding: 6%;
+      text-align: center;
+    }
+    .pick-display.visible { opacity: 1; }
+
+    .pick-name {
+      font-size: calc(var(--ball-sz) * 0.036);
+      font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+      color: #333; line-height: 1.1;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      max-width: 90%;
+    }
+    .pick-rec {
+      font-size: calc(var(--ball-sz) * 0.072);
+      font-weight: 900; letter-spacing: -0.02em; line-height: 1;
+      margin-top: 2%;
+    }
+    .pick-rec.over  { color: #16a34a; }
+    .pick-rec.under { color: #dc2626; }
+    .pick-rec.error { color: #888; }
+    .pick-line {
+      font-size: calc(var(--ball-sz) * 0.032);
+      font-weight: 600; color: #666; line-height: 1.2;
+      margin-top: 1%;
+    }
+
+    /* ── Spinner (replaces circle content while loading) ──────────────── */
     .spinner-wrap {
       position: absolute; top: 50%; left: 50%;
       transform: translate(-50%, -50%);
@@ -297,26 +214,18 @@
     }
     @keyframes spin { to { transform: rotate(360deg); } }
 
-    .ball.loading .eight-wrap   { opacity: 0; }
+    .ball.loading .circle-wrap  { opacity: 0; }
     .ball.loading .spinner-wrap { opacity: 1; }
-
   </style>
 </head>
 <body>
 
 <div class="scene">
-
-  <section class="hero">
+  <section class="hero" id="hero">
     <p class="eyebrow">Tonight's Picks</p>
     <h1>Shake to Predict</h1>
-    <div class="cta-wrap">
-      <button id="ctaBtn">Get Predictions</button>
-    </div>
   </section>
 
-  <div class="cards-zone" id="cardsZone"></div>
-
-  <!-- Ball: absolutely anchored to bottom, X-centered via .ball-anchor -->
   <div class="ball-anchor">
     <div class="ball-stage" id="ballStage">
       <div class="ball" id="ball">
@@ -324,45 +233,56 @@
         <div class="sph-spec2"></div>
         <div class="sph-rear"></div>
         <div class="sph-rim"></div>
-        <div class="eight-wrap">
-          <span class="eight">8</span>
+
+        <div class="circle-wrap" id="circleWrap">
+          <span class="eight" id="eight">8</span>
+          <div class="pick-display" id="pickDisplay">
+            <span class="pick-name"  id="pickName"></span>
+            <span class="pick-rec"   id="pickRec"></span>
+            <span class="pick-line"  id="pickLine"></span>
+          </div>
         </div>
+
         <div class="spinner-wrap">
           <div class="spinner-ring"></div>
         </div>
       </div>
     </div>
   </div>
-
 </div>
 
 <script>
 (function () {
   'use strict';
 
-  /* ── Config ─────────────────────────────────────────────────────────── */
   const API_BASE = window.location.hostname === 'localhost'
     ? ''
     : 'https://your-render-app.onrender.com';
 
-  const COOLDOWN_MS = 4000;
+  const COOLDOWN_MS  = 4000;
+  const CYCLE_MS     = 3000;
 
-  /* ── Elements ───────────────────────────────────────────────────────── */
-  const ballStage = document.getElementById('ballStage');
-  const ball      = document.getElementById('ball');
-  const ctaBtn    = document.getElementById('ctaBtn');
-  const cardsZone = document.getElementById('cardsZone');
+  const hero        = document.getElementById('hero');
+  const ballStage   = document.getElementById('ballStage');
+  const ball        = document.getElementById('ball');
+  const eight       = document.getElementById('eight');
+  const pickDisplay = document.getElementById('pickDisplay');
+  const pickName    = document.getElementById('pickName');
+  const pickRec     = document.getElementById('pickRec');
+  const pickLine    = document.getElementById('pickLine');
 
   let loading    = false;
   let cooldownAt = 0;
-  let cdTimer    = null;
+  let cycleTimer = null;
+  let picks      = [];
+  let pickIndex  = 0;
 
-  /* ── Shake detection ─────────────────────────────────────────────────── */
+  /* ── Shake ──────────────────────────────────────────────────────────── */
   let lastAcc = { x: 0, y: 0, z: 0 };
   function onMotion(e) {
     const a = e.accelerationIncludingGravity;
     if (!a) return;
-    const d = Math.abs((a.x||0)-lastAcc.x) + Math.abs((a.y||0)-lastAcc.y) + Math.abs((a.z||0)-lastAcc.z);
+    const d = Math.abs((a.x||0)-lastAcc.x)+Math.abs((a.y||0)-lastAcc.y)+Math.abs((a.z||0)-lastAcc.z);
     lastAcc = { x: a.x||0, y: a.y||0, z: a.z||0 };
     if (d > 20) trigger();
   }
@@ -380,42 +300,49 @@
     }
   }
 
-  /* ── Inputs ──────────────────────────────────────────────────────────── */
-  ctaBtn.addEventListener('click',    () => { bindMotion(); trigger(); });
   ballStage.addEventListener('click', () => { bindMotion(); trigger(); });
 
-  /* ── Trigger ─────────────────────────────────────────────────────────── */
+  /* ── Trigger ────────────────────────────────────────────────────────── */
   function trigger() {
     if (loading || Date.now() < cooldownAt) return;
     fetchPredictions();
   }
 
-  /* ── Fetch ───────────────────────────────────────────────────────────── */
+  /* ── Fetch ──────────────────────────────────────────────────────────── */
   async function fetchPredictions() {
     loading = true;
-    ctaBtn.disabled = true;
-    ctaBtn.textContent = '…';
+    stopCycle();
 
-    /* Ball pulse */
-    ['pulse', 'err'].forEach(c => ballStage.classList.remove(c));
+    ['pulse','err'].forEach(c => ballStage.classList.remove(c));
     void ballStage.offsetWidth;
     ballStage.classList.add('pulse');
     ballStage.addEventListener('animationend', e => {
       if (e.animationName === 'ball-pulse') ballStage.classList.remove('pulse');
     }, { once: true });
 
+    showEight();          // reset to 8 while loading
     ball.classList.add('loading');
 
     try {
       const res = await fetch(`${API_BASE}/predict`, {
         headers: { Accept: 'application/json' },
-        signal: AbortSignal.timeout(15000),
+        signal: AbortSignal.timeout(20000),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      renderCards(data.players || []);
+      picks = (data.players || []).filter(p => p.recommendation);
+      if (picks.length) {
+        hero.classList.add('hidden');
+        pickIndex = 0;
+        ball.classList.remove('loading');
+        showPick(picks[0]);
+        startCycle();
+      } else {
+        showError('No picks');
+      }
     } catch (_) {
-      ['pulse'].forEach(c => ballStage.classList.remove(c));
+      showError('No picks');
+      ballStage.classList.remove('pulse');
       void ballStage.offsetWidth;
       ballStage.classList.add('err');
       ballStage.addEventListener('animationend', e => {
@@ -425,52 +352,68 @@
       loading    = false;
       cooldownAt = Date.now() + COOLDOWN_MS;
       ball.classList.remove('loading');
-      startCountdown();
     }
   }
 
-  /* ── Countdown ────────────────────────────────────────────────────────── */
-  function startCountdown() {
-    clearInterval(cdTimer);
-    cdTimer = setInterval(() => {
-      const rem = Math.ceil((cooldownAt - Date.now()) / 1000);
-      if (rem <= 0) {
-        clearInterval(cdTimer);
-        ctaBtn.disabled = false;
-        ctaBtn.textContent = 'Get Predictions';
-      } else {
-        ctaBtn.innerHTML = `<span class="cd">${rem}s</span>`;
-      }
-    }, 250);
+  /* ── Pick cycling ───────────────────────────────────────────────────── */
+  function startCycle() {
+    stopCycle();
+    if (picks.length <= 1) return;
+    cycleTimer = setInterval(() => {
+      pickIndex = (pickIndex + 1) % picks.length;
+      fadeToPick(picks[pickIndex]);
+    }, CYCLE_MS);
   }
 
-  /* ── Render cards ─────────────────────────────────────────────────────── */
-  function renderCards(players) {
-    if (!players.length) return;
-    cardsZone.innerHTML = players.map((p, i) => {
-      const rec  = p.recommendation;
-      const cls  = rec === 'OVER' ? 'over' : rec === 'UNDER' ? 'under' : 'none';
-      const line = p.prop_line != null ? `${p.prop_line} pts` : '–';
-      const conf = p.confidence != null ? `${Math.round(p.confidence * 100)}%` : '';
-      return `<div class="card-outer" style="--i:${i}">
-        <div class="card" style="--i:${i}">
-          <div class="card-info">
-            <div class="card-name">${esc(p.name)}</div>
-            <div class="card-line">${esc(line)}</div>
-          </div>
-          <div class="card-right">
-            <span class="badge ${cls}">${esc(rec || '–')}</span>
-            ${conf ? `<span class="conf">${conf}</span>` : ''}
-          </div>
-        </div>
-      </div>`;
-    }).join('');
+  function stopCycle() {
+    clearInterval(cycleTimer);
+    cycleTimer = null;
   }
 
-  function esc(s) {
-    return String(s)
-      .replace(/&/g,'&amp;').replace(/</g,'&lt;')
-      .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  function fadeToPick(pick) {
+    pickDisplay.classList.remove('visible');
+    setTimeout(() => {
+      populatePick(pick);
+      pickDisplay.classList.add('visible');
+    }, 350);
+  }
+
+  function showPick(pick) {
+    eight.style.opacity = '0';
+    populatePick(pick);
+    pickDisplay.classList.add('visible');
+  }
+
+  function populatePick(pick) {
+    const lastName = pick.name.split(' ').slice(-1)[0];
+    const rec      = pick.recommendation;           // "OVER" | "UNDER"
+    const line     = pick.prop_line != null ? `${pick.prop_line} pts` : '';
+
+    pickName.textContent = lastName;
+    pickRec.textContent  = rec;
+    pickRec.className    = 'pick-rec ' + (rec === 'OVER' ? 'over' : rec === 'UNDER' ? 'under' : '');
+    pickLine.textContent = line;
+  }
+
+  function showError(msg) {
+    ball.classList.remove('loading');
+    eight.style.opacity = '0';
+    pickName.textContent = '';
+    pickRec.textContent  = msg;
+    pickRec.className    = 'pick-rec error';
+    pickLine.textContent = '';
+    pickDisplay.classList.add('visible');
+    // Reset back to 8 after 3s
+    setTimeout(showEight, 3000);
+  }
+
+  function showEight() {
+    stopCycle();
+    pickDisplay.classList.remove('visible');
+    setTimeout(() => {
+      eight.style.opacity = '1';
+      hero.classList.remove('hidden');
+    }, 300);
   }
 }());
 </script>
