@@ -364,10 +364,19 @@ class FusionModel(nn.Module):
             print(f"[fusion] warning — LSTM checkpoint not found at {lstm_ckpt}, using random init")
 
         if os.path.exists(cnn_ckpt):
-            self.cnn_branch.load_state_dict(
-                torch.load(cnn_ckpt, map_location="cpu"), strict=False
-            )
-            print(f"[fusion] loaded CNN checkpoint: {cnn_ckpt}")
+            ckpt_state = torch.load(cnn_ckpt, map_location="cpu")
+            # Drop any tensors whose shape doesn't match the current architecture
+            # (e.g. stale checkpoints from before the pose-feature expansion).
+            cur_state = self.cnn_branch.state_dict()
+            compatible = {k: v for k, v in ckpt_state.items()
+                          if k in cur_state and cur_state[k].shape == v.shape}
+            dropped = sorted(set(ckpt_state) - set(compatible))
+            self.cnn_branch.load_state_dict(compatible, strict=False)
+            if dropped:
+                print(f"[fusion] loaded CNN checkpoint with {len(dropped)} mismatched "
+                      f"keys skipped (stale architecture): {cnn_ckpt}")
+            else:
+                print(f"[fusion] loaded CNN checkpoint: {cnn_ckpt}")
         else:
             print(f"[fusion] warning — CNN checkpoint not found at {cnn_ckpt}, using random init")
 

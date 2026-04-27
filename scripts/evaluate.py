@@ -95,7 +95,14 @@ def eval_cnn() -> dict | None:
 
     model = CNNBranch(dropout=DROPOUT).to(DEVICE)
     state = torch.load(ckpt, map_location=DEVICE)
-    model.load_state_dict(state, strict=False)
+    try:
+        model.load_state_dict(state, strict=False)
+    except RuntimeError as e:
+        print(f"[CNN]   stale checkpoint at {ckpt} (shape mismatch with current "
+              f"architecture). Re-train via the Colab notebook, then pull "
+              f"cnn_best.pt back to checkpoints/. Skipping.")
+        print(f"        details: {str(e).splitlines()[0]}")
+        return None
     model.eval()
 
     ds = ClipIdentityDataset(train=False)
@@ -130,7 +137,14 @@ def eval_fusion() -> dict | None:
         cnn_ckpt=os.path.join(CHECKPOINTS_DIR, "cnn_best.pt"),
         dropout=DROPOUT,
     ).to(DEVICE)
-    model.load_state_dict(torch.load(ckpt, map_location=DEVICE))
+    try:
+        model.load_state_dict(torch.load(ckpt, map_location=DEVICE))
+    except RuntimeError as e:
+        print(f"[Fusion] stale checkpoint at {ckpt} (shape mismatch with current "
+              f"architecture). Re-train via the Colab notebook, then pull "
+              f"fusion_best.pt back to checkpoints/. Skipping.")
+        print(f"         details: {str(e).splitlines()[0]}")
+        return None
     model.eval()
 
     ds = FusionDataset(TEST_CSV)
