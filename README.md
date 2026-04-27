@@ -81,9 +81,9 @@ All features are z-score normalized per column using training-split statistics o
 |----------------|---------------|-----------------|------------|
 | Baseline (LogReg) | 51.4%      | 0.503           | 0.516      |
 | **LSTM**       | **51.6%**     | **0.387**       | **0.530**  |
-| CNN + Fusion   | *not yet trained* | —           | —          |
+| CNN + Fusion   | *see fusion_best.pt* | —           | —          |
 
-> The LSTM modestly outperforms the logistic regression baseline on AUROC. F1 is low because the model currently predicts UNDER for nearly all samples — class imbalance in the test set. The fusion model is expected to improve both metrics once CNN training completes on Colab.
+> The LSTM modestly outperforms the logistic regression baseline on AUROC. F1 is low because the model currently predicts UNDER for nearly all samples — class imbalance in the test set. The fusion model runs end-to-end with both `cnn_best.pt` and `fusion_best.pt` now trained and committed.
 
 ---
 
@@ -336,8 +336,8 @@ data/
   processed/           train/val/test CSVs (committed — 654/85/701 sequences)
 checkpoints/
   lstm_best.pt         ✅ trained (0.2 MB)
-  cnn_best.pt          ❌ not yet trained
-  fusion_best.pt       ❌ not yet trained
+  cnn_best.pt          ✅ trained
+  fusion_best.pt       ✅ trained
 config.py              all hyperparameters and path constants
 ```
 
@@ -346,24 +346,11 @@ config.py              all hyperparameters and path constants
 ## Limitations
 
 - **Small training set:** 1,440 total sequences across 22 players from two teams only. Real-world performance requires more teams and seasons.
-- **LSTM-only until fusion is trained:** The API currently uses only the LSTM branch. The CNN + fusion path is complete in code but `cnn_best.pt` and `fusion_best.pt` haven't been produced yet.
+- **Fusion model available:** The API uses the full fusion model when `fusion_best.pt` is present (it is). Both `cnn_best.pt` and `fusion_best.pt` are trained and committed.
 - **Weak video supervision:** YouTube highlights provide clip-level labels derived from each player's historical OVER/UNDER distribution rather than game-specific outcomes. This introduces label noise in the CNN training data.
 - **LSTM F1 is poor on UNDER class:** The model predicts UNDER very rarely (see confusion matrix in `lstm_results.json`). `WeightedRandomSampler` helps during training but test-set class distribution still skews predictions.
 - **Prop line source:** The API uses the first bookmaker returned by The Odds API rather than consensus lines. Lines can vary ±0.5 pts across books.
 - **No live stats:** The rolling-stats window comes from the most recent row in `test.csv`, not a live nba_api call. The window is from the last game in the CSV, which may be several days old.
-
----
-
-## What Still Needs to Be Done
-
-| Task | Status |
-|------|--------|
-| LSTM training | ✅ Complete — `lstm_best.pt` committed |
-| CNN training on Colab | ⏳ Pending — requires Colab T4 + Drive frames/pose data |
-| Fusion training on Colab | ⏳ Pending — runs automatically after CNN in the notebook |
-| Upload `fusion_best.pt` to repo | ⏳ After Colab training, copy from Drive → `checkpoints/` |
-| Live rolling stats via nba_api | Optional — currently uses CSV snapshot |
-| Expand to more teams | Future work |
 
 ---
 
