@@ -73,7 +73,15 @@ from config import (
     WINDOW_SIZE,
 )
 from src.models.lstm import LSTMBranch
-from src.models.cnn import CNNBranch
+from src.models.cnn import (
+    CNNBranch,
+    N_FRAMES_PER_CLIP,
+    POSE_DIM as CNN_POSE_DIM,
+    _pose_feature_columns,
+    _player_slug as _cnn_player_slug,
+    _row_to_pose_vec,
+    build_player_pose_table,
+)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -82,7 +90,7 @@ from src.models.cnn import CNNBranch
 LSTM_HIDDEN_DIM = 128   # hidden_size=64 bidirectional → 64*2
 CNN_HIDDEN_DIM  = 192   # visual 128 + pose 64
 PROJ_DIM        = 128   # both branches projected to this before weighted sum
-POSE_DIM        = 135   # 132 landmark means + 3 derived signals
+POSE_DIM        = CNN_POSE_DIM   # 267 — must match cnn.py
 
 # Softmax of these inits gives approximately [0.61, 0.39] → LSTM majority
 _LSTM_INIT_LOGIT = 0.45
@@ -136,15 +144,25 @@ def _build_game_id_lookup(gamelogs_dir: str) -> dict[tuple[str, str], str]:
 class FusionDataset(Dataset):
     """
     Each sample contains:
-      seq_tensor  : (WINDOW_SIZE, num_features) — reshaped from flattened stats CSV
-      pose_tensor : (POSE_DIM,)                 — mean pose vector for the game;
-                                                   all-zeros if no pose data exists
-      frame_tensor: (3, 224, 224)               — middle frame of any clip for the
-                                                   game; zero-image if unavailable
-      label       : float 0 or 1
+      seq_tensor   : (WINDOW_SIZE, num_features) — reshaped from flattened stats CSV
+      pose_tensor  : (POSE_DIM,)  — pose features for the game when available,
+                                    otherwise the player's average pose across
+                                    all their clips (a kinetic fingerprint).
+                                    All-zeros only if the player has no pose data.
+      frames_tensor: (N_FRAMES_PER_CLIP, 3, 224, 224)
+                                  — multi-frame stack for the game when available,
+                                    otherwise from any of the player's clips.
+                                    Zero-tensor only if the player has no clips.
+      label        : float 0 or 1
 
-    Stats CSV rows that have no matching pose data still appear in the dataset;
-    the zero pose/frame lets the fusion model rely on LSTM for those samples.
+    Per-player fallback rationale
+    -----------------------------
+    Today, every clip in FRAMES_DIR is a YouTube highlight (no real game IDs),
+    so a strict (player, game_id) join leaves every sample with zero pose and
+    zero frames — which is exactly what made the CNN branch useless.  The
+    fallback gives the CNN a *player-stable* visual+pose signature for every
+    sample.  The kinetic features still vary per player, which is what fusion
+    can exploit alongside the LSTM stat history.
     """
 
     def __init__(
@@ -163,15 +181,14 @@ class FusionDataset(Dataset):
         self._game_id_map = _build_game_id_lookup(gamelogs_dir or RAW_GAMELOGS_DIR)
 
         df = pd.read_csv(labels_csv)
-        feat_flat_cols = [c for c in df.columns
-                          if c not in {"PLAYER_NAME", "GAME_DATE", "PROP_LINE", "LABEL"}]
-        # Derive the per-step feature names in window order
-        # Columns are named {FEAT}_t{step}, e.g. PTS_t0 … MIN_t4
         self._n_features = len(FEATURE_COLS)
-        self._feat_cols  = feat_flat_cols
 
-        # Build pose lookup: {player_slug: {game_id: np.ndarray(135,)}}
-        self._pose_map = self._load_pose_map()
+        # Per-game pose lookup (game-keyed) and per-player fallback pose vectors.
+        self._pose_map     = self._load_pose_map()
+        self._player_pose  = build_player_pose_table(str(self.pose_root))
+
+        # Per-player clip-dir cache for frame fallback.
+        self._player_clips = self._build_player_clip_index()
 
         self.samples: list[tuple[np.ndarray, np.ndarray, Optional[Path], int]] = []
         for _, row in df.iterrows():
@@ -181,11 +198,11 @@ class FusionDataset(Dataset):
             label       = int(row["LABEL"])
 
             game_id  = self._game_id_map.get((player_name, game_date))
-            slug     = _player_slug(player_name)
+            slug     = _cnn_player_slug(player_name)
             pose_vec = self._get_pose(slug, game_id)
-            frame_p  = self._get_frame_path(slug, game_id)
+            clip_dir = self._get_clip_dir(slug, game_id)
 
-            self.samples.append((seq, pose_vec, frame_p, label))
+            self.samples.append((seq, pose_vec, clip_dir, label))
 
     # ------------------------------------------------------------------
     def _extract_seq(self, row: pd.Series) -> np.ndarray:
@@ -197,58 +214,83 @@ class FusionDataset(Dataset):
         return np.array(vals, dtype=np.float32)   # (W, F)
 
     def _load_pose_map(self) -> dict[str, dict[str, np.ndarray]]:
+        """{player_slug: {game_id: pose_vec}}  — keyed on real game IDs only."""
         pose_map: dict[str, dict[str, np.ndarray]] = {}
         if not self.pose_root.exists():
             return pose_map
-        mean_cols = [c for c in self._all_pose_columns() if not c.endswith("_std")
-                     and c not in {"game_id", "event_id"}]
         for player in PLAYERS:
-            slug     = _player_slug(player)
+            slug     = _cnn_player_slug(player)
             pose_csv = self.pose_root / f"{slug}.csv"
             if not pose_csv.exists():
                 continue
             pdf = pd.read_csv(pose_csv)
-            pdf["game_id"] = pdf["game_id"].astype(str).str.zfill(10)
-            # Identify the 135 feature columns (means + derived signals)
-            feat_cols = [c for c in pdf.columns
-                         if c not in {"game_id", "event_id"}
-                         and not c.endswith("_std")][:POSE_DIM]
-            # Average all clips for the same game
-            game_groups = pdf.groupby("game_id")[feat_cols].mean()
-            pose_map[slug] = {
-                gid: row.values.astype(np.float32)
-                for gid, row in game_groups.iterrows()
-            }
+            if "game_id" not in pdf.columns:
+                continue
+            pdf["game_id"] = pdf["game_id"].astype(str)
+            feat_cols = _pose_feature_columns(pdf)
+            if not feat_cols:
+                continue
+            game_rows = pdf[pdf["game_id"].str.lower() != "yt"]
+            if game_rows.empty:
+                continue
+            # Average all clips for the same real game
+            sub: dict[str, np.ndarray] = {}
+            for gid, group in game_rows.groupby("game_id"):
+                vecs = np.stack(
+                    [_row_to_pose_vec(r, feat_cols) for _, r in group.iterrows()],
+                    axis=0,
+                )
+                sub[str(gid).zfill(10)] = vecs.mean(axis=0).astype(np.float32)
+            pose_map[slug] = sub
         return pose_map
 
-    @staticmethod
-    def _all_pose_columns() -> list[str]:
-        return []  # placeholder; real column list loaded from CSV
+    def _build_player_clip_index(self) -> dict[str, list[Path]]:
+        """{player_slug: [clip_dir, ...]} listing every clip dir for fallback."""
+        idx: dict[str, list[Path]] = {}
+        if not self.frames_root.exists():
+            return idx
+        for player_dir in self.frames_root.iterdir():
+            if not player_dir.is_dir():
+                continue
+            clips = [d for d in player_dir.iterdir()
+                     if d.is_dir() and any(d.glob("*.jpg"))]
+            if clips:
+                idx[player_dir.name] = sorted(clips)
+        return idx
 
     def _get_pose(self, slug: str, game_id: Optional[str]) -> np.ndarray:
+        # 1) Real game-id match
         if game_id and slug in self._pose_map:
-            vec = self._pose_map[slug].get(game_id)
+            vec = self._pose_map[slug].get(str(game_id).zfill(10))
             if vec is not None:
-                if len(vec) >= POSE_DIM:
-                    return vec[:POSE_DIM]
-                # Pad if shorter
-                padded = np.zeros(POSE_DIM, dtype=np.float32)
-                padded[:len(vec)] = vec
-                return padded
+                return self._fit(vec)
+        # 2) Per-player kinetic-fingerprint fallback
+        if slug in self._player_pose:
+            return self._fit(self._player_pose[slug])
+        # 3) Last resort
         return np.zeros(POSE_DIM, dtype=np.float32)
 
-    def _get_frame_path(self, slug: str, game_id: Optional[str]) -> Optional[Path]:
-        if not game_id:
-            return None
-        player_dir = self.frames_root / slug
-        if not player_dir.exists():
-            return None
-        # Find any clip directory for this game_id
-        for clip_dir in player_dir.iterdir():
-            if clip_dir.is_dir() and clip_dir.name.startswith(game_id):
-                frames = sorted(clip_dir.glob("*.jpg"))
-                if frames:
-                    return frames[len(frames) // 2]  # middle frame
+    @staticmethod
+    def _fit(vec: np.ndarray) -> np.ndarray:
+        if len(vec) >= POSE_DIM:
+            return vec[:POSE_DIM].astype(np.float32)
+        padded = np.zeros(POSE_DIM, dtype=np.float32)
+        padded[:len(vec)] = vec
+        return padded
+
+    def _get_clip_dir(self, slug: str, game_id: Optional[str]) -> Optional[Path]:
+        # 1) Real game-id-prefixed clip
+        if game_id:
+            player_dir = self.frames_root / slug
+            if player_dir.exists():
+                for clip_dir in player_dir.iterdir():
+                    if clip_dir.is_dir() and clip_dir.name.startswith(str(game_id)):
+                        if any(clip_dir.glob("*.jpg")):
+                            return clip_dir
+        # 2) Any clip for this player (deterministic: pick first by name)
+        clips = self._player_clips.get(slug)
+        if clips:
+            return clips[0]
         return None
 
     # ------------------------------------------------------------------
@@ -256,19 +298,25 @@ class FusionDataset(Dataset):
         return len(self.samples)
 
     def __getitem__(self, idx: int):
-        seq, pose_vec, frame_path, label = self.samples[idx]
+        seq, pose_vec, clip_dir, label = self.samples[idx]
 
         seq_t  = torch.tensor(seq, dtype=torch.float32)         # (W, F)
-        pose_t = torch.tensor(pose_vec, dtype=torch.float32)    # (135,)
+        pose_t = torch.tensor(pose_vec, dtype=torch.float32)    # (POSE_DIM,)
 
-        if frame_path is not None and frame_path.exists():
-            img = Image.open(frame_path).convert("RGB")
-            frame_t = self.transform(img)
+        if clip_dir is not None and clip_dir.exists():
+            frames = sorted(clip_dir.glob("*.jpg"))
+            if frames:
+                idxs = np.linspace(0, len(frames) - 1, N_FRAMES_PER_CLIP).round().astype(int)
+                imgs = [self.transform(Image.open(frames[i]).convert("RGB"))
+                        for i in idxs]
+                frames_t = torch.stack(imgs, dim=0)              # (T, 3, 224, 224)
+            else:
+                frames_t = torch.zeros(N_FRAMES_PER_CLIP, 3, 224, 224, dtype=torch.float32)
         else:
-            frame_t = torch.zeros(3, 224, 224, dtype=torch.float32)
+            frames_t = torch.zeros(N_FRAMES_PER_CLIP, 3, 224, 224, dtype=torch.float32)
 
         label_t = torch.tensor(float(label), dtype=torch.float32)
-        return seq_t, pose_t, frame_t, label_t
+        return seq_t, pose_t, frames_t, label_t
 
     def class_weights(self) -> torch.Tensor:
         labels = np.array([s[3] for s in self.samples])

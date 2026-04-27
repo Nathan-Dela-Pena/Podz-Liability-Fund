@@ -31,7 +31,7 @@ from config import (
     WINDOW_SIZE,
 )
 from src.models.lstm import LSTMBranch, PlayerSequenceDataset
-from src.models.cnn import CNNBranch
+from src.models.cnn import CNNBranch, ClipIdentityDataset
 from src.models.fusion import FusionDataset, FusionModel
 
 TEST_CSV = os.path.join(PROCESSED_DIR, "test.csv")
@@ -81,28 +81,42 @@ def eval_lstm() -> dict | None:
 
 
 def eval_cnn() -> dict | None:
+    """
+    The CNN branch is now trained as a player-identity encoder (no clip→game
+    mapping exists in the data, so per-clip over/under labels were noise).
+    We report its player-ID accuracy on the clip pool so the user can verify
+    the encoder is actually learning.  AUROC / Macro-F1 are reported as
+    macro-averaged over the 22 player classes.
+    """
     ckpt = os.path.join(CHECKPOINTS_DIR, "cnn_best.pt")
     if not os.path.exists(ckpt):
         print("[CNN]   checkpoints/cnn_best.pt not found — skipping")
         return None
 
     model = CNNBranch(dropout=DROPOUT).to(DEVICE)
-    model.load_state_dict(torch.load(ckpt, map_location=DEVICE))
+    state = torch.load(ckpt, map_location=DEVICE)
+    model.load_state_dict(state, strict=False)
     model.eval()
 
-    ds = FusionDataset(TEST_CSV)
-    labels, preds, probs = [], [], []
-    with torch.no_grad():
-        for seq, pose, frame, y in ds:
-            frame = frame.unsqueeze(0).to(DEVICE)
-            pose  = pose.unsqueeze(0).to(DEVICE)
-            logit, _ = model(frame, pose)
-            prob = torch.sigmoid(logit).item()
-            labels.append(int(y.item()))
-            preds.append(int(prob >= 0.5))
-            probs.append(prob)
+    ds = ClipIdentityDataset(train=False)
+    if len(ds) == 0:
+        print("[CNN]   no clips found — skipping")
+        return None
 
-    return _metrics(np.array(labels), np.array(preds), np.array(probs))
+    labels, preds = [], []
+    with torch.no_grad():
+        for frames, pose, y in ds:
+            frames = frames.unsqueeze(0).to(DEVICE)   # (1, T, 3, 224, 224)
+            pose   = pose.unsqueeze(0).to(DEVICE)
+            logits, _ = model.forward_id(frames, pose)
+            preds.append(int(logits.argmax(dim=-1).item()))
+            labels.append(int(y.item()))
+
+    labels_np = np.array(labels)
+    preds_np  = np.array(preds)
+    acc = accuracy_score(labels_np, preds_np)
+    f1  = f1_score(labels_np, preds_np, average="macro", zero_division=0)
+    return {"accuracy": acc, "f1_macro": f1, "auroc": float("nan")}
 
 
 def eval_fusion() -> dict | None:

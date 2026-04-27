@@ -140,9 +140,19 @@ CHECKPOINTS_DIR  = "checkpoints"
 
 # Frames and pose CSVs are written directly to Google Drive so they are
 # backed up automatically without occupying local disk space.
-# Google Drive desktop app mounts at ~/Google Drive/My Drive/ on macOS.
-_GDRIVE = os.path.expanduser(
+#
+# Resolution order:
+#   1. PODZ_DATA_DIR env var (set in Colab to /content/drive/MyDrive/podz-liability-fund)
+#   2. Colab default: /content/drive/MyDrive/podz-liability-fund (if mounted)
+#   3. macOS Google Drive desktop mount (local laptop)
+_DEFAULT_LOCAL  = os.path.expanduser(
     "~/Library/CloudStorage/GoogleDrive-nathan.mdelapena@gmail.com/My Drive/podz-liability-fund"
+)
+_COLAB_DEFAULT  = "/content/drive/MyDrive/podz-liability-fund"
+
+_GDRIVE = (
+    os.getenv("PODZ_DATA_DIR")
+    or (_COLAB_DEFAULT if os.path.isdir(_COLAB_DEFAULT) else _DEFAULT_LOCAL)
 )
 FRAMES_DIR = f"{_GDRIVE}/frames"
 POSE_DIR   = f"{_GDRIVE}/pose"
