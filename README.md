@@ -85,6 +85,12 @@ All features are z-score normalized per column using training-split statistics o
 
 > The LSTM modestly outperforms the logistic regression baseline on AUROC. F1 is low because the model currently predicts UNDER for nearly all samples — class imbalance in the test set. The fusion model runs end-to-end with both `cnn_best.pt` and `fusion_best.pt` now trained and committed.
 
+**To reproduce these numbers**, run:
+```bash
+python scripts/evaluate.py
+```
+This loads each available checkpoint (`lstm_best.pt`, `cnn_best.pt`, `fusion_best.pt`) from `checkpoints/`, runs inference on `data/processed/test.csv`, and prints Accuracy, Macro F1, and Test AUROC in a summary table. Missing checkpoints are skipped automatically.
+
 ---
 
 ## Setup
