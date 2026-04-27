@@ -180,11 +180,14 @@ def build() -> pd.DataFrame:
         efg_pct = min(float(row["EFG_PCT"]), 1.0)
 
         # USG_PCT is left as NaN here; build_sequences will drop it or impute.
+        matchup = str(row.get("MATCHUP", ""))
+        home_away = 1.0 if "vs." in matchup else 0.0
+
         rows.append({
             "PLAYER_NAME": player,
             "SEASON":      season,
             "GAME_DATE":   date_str,
-            "MATCHUP":     row.get("MATCHUP", ""),
+            "MATCHUP":     matchup,
             "WL":          row.get("WL", ""),
             "MIN":         float(row["MIN"]),
             "PTS":         float(pts),
@@ -192,6 +195,7 @@ def build() -> pd.DataFrame:
             "EFG_PCT":     efg_pct,
             "USG_PCT":     float(row["USG_PCT"]) if pd.notna(row.get("USG_PCT")) else float("nan"),
             "OPP_DRTG":    opp_drtg,
+            "HOME_AWAY":   home_away,
             "PROP_LINE":   float(line),
             "LABEL":       int(label),
         })
@@ -199,6 +203,15 @@ def build() -> pd.DataFrame:
     df = pd.DataFrame(rows)
     df["GAME_DATE"] = pd.to_datetime(df["GAME_DATE"])
     df = df.sort_values(["PLAYER_NAME", "GAME_DATE"]).reset_index(drop=True)
+
+    # DAYS_REST: days since the player's previous game, capped at 7
+    df["DAYS_REST"] = (
+        df.groupby("PLAYER_NAME")["GAME_DATE"]
+        .diff()
+        .dt.days
+        .clip(upper=7)
+        .fillna(3.0)
+    )
 
     print(f"\nMerge summary:")
     print(f"  Total rows with labels  : {len(df)}")

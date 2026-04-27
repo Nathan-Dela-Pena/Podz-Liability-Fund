@@ -125,10 +125,10 @@ LEARNING_RATE = 1e-3
 WEIGHT_DECAY  = 5e-5   # light L2 — prevents blow-up without slowing early learning
 BATCH_SIZE    = 32
 EPOCHS        = 60
-PATIENCE      = 7      # stop if val_acc hasn't improved for N epochs
+PATIENCE      = 12     # val set is small (85 rows) — need more patience for noisy signal
 
 # --- Feature columns (must match build_sequences.py) ---
-FEATURE_COLS = ["PTS", "TS_PCT", "EFG_PCT", "USG_PCT", "OPP_DRTG", "MIN"]
+FEATURE_COLS = ["PTS", "TS_PCT", "EFG_PCT", "USG_PCT", "OPP_DRTG", "MIN", "HOME_AWAY", "DAYS_REST"]
 
 # --- Paths ---
 DATA_DIR         = "data"
