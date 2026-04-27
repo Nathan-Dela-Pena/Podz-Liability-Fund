@@ -1,6 +1,6 @@
 # Podz-Liability-Fund
 
-CS 489/689 Deep Learning — Multimodal NBA player prop prediction system.
+Multimodal NBA player prop prediction system.
 
 Predicts whether Golden State Warriors and San Antonio Spurs players will go **OVER or UNDER** their bookmaker-set points prop line by fusing two deep learning branches:
 
