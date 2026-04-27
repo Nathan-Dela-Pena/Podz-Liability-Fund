@@ -71,9 +71,10 @@ def _run_split(model: LSTMBranch, csv_path: str, device: str):
     all_probs:  list[float] = []
 
     with torch.no_grad():
-        for idx, (x, y) in enumerate(ds):
+        for idx, (x, s, y) in enumerate(ds):
             x = x.unsqueeze(0).to(device)
-            logit, _ = model(x)
+            s = s.unsqueeze(0).to(device)
+            logit, _ = model(x, s)
             prob = torch.sigmoid(logit).item()
             pred = int(prob >= 0.5)
             all_labels.append(int(y.item()))

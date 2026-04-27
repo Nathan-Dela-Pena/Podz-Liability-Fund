@@ -63,11 +63,23 @@ def _available_features(df):
     return available
 
 
-def build_sequences(df, feat_cols, player_stats):
+def build_sequences(df, feat_cols, player_stats, line_mean, line_std):
+    """
+    Builds sliding-window sequences plus two static features per sample:
+      PROP_LINE_Z     : z-score of PROP_LINE relative to the training distribution.
+      LINE_VS_RECENT  : (PROP_LINE - raw rolling mean PTS over window) /
+                        per-player raw PTS std.  Tells the model how far above /
+                        below the player's recent form the line is set — the
+                        most informative single signal for over/under.
+    """
     records = []
     for player, grp in df.groupby("PLAYER_NAME"):
         grp = grp.sort_values("GAME_DATE").reset_index(drop=True)
         stats = player_stats.get(player, {})
+
+        # Raw PTS series (used to compute LINE_VS_RECENT before normalization)
+        pts_raw = grp["PTS"].astype(float).fillna(stats.get("PTS", (0.0, 1.0))[0]).values
+        pts_player_std = max(stats.get("PTS", (0.0, 1.0))[1], 1.0)
 
         X = grp[feat_cols].copy()
         for col in feat_cols:
@@ -75,18 +87,25 @@ def build_sequences(df, feat_cols, player_stats):
             X[col] = X[col].fillna(mean)
             X[col] = (X[col] - mean) / (std if std > 0 else 1.0)
 
-        X_arr = X.values.astype(np.float32)
+        X_arr  = X.values.astype(np.float32)
         labels = grp["LABEL"].values
         dates  = grp["GAME_DATE"].values
         lines  = grp["PROP_LINE"].values
 
         for t in range(WINDOW_SIZE, len(grp)):
-            window = X_arr[t - WINDOW_SIZE: t]
+            window         = X_arr[t - WINDOW_SIZE: t]
+            line           = float(lines[t])
+            recent_mean    = float(pts_raw[t - WINDOW_SIZE: t].mean())
+            line_vs_recent = (line - recent_mean) / pts_player_std
+            line_z         = (line - line_mean) / (line_std if line_std > 0 else 1.0)
+
             rec = {
-                "PLAYER_NAME": player,
-                "GAME_DATE":   dates[t],
-                "PROP_LINE":   lines[t],
-                "LABEL":       int(labels[t]),
+                "PLAYER_NAME":    player,
+                "GAME_DATE":      dates[t],
+                "PROP_LINE":      line,
+                "PROP_LINE_Z":    float(line_z),
+                "LINE_VS_RECENT": float(line_vs_recent),
+                "LABEL":          int(labels[t]),
             }
             for i in range(WINDOW_SIZE):
                 for j, col in enumerate(feat_cols):
@@ -129,11 +148,14 @@ def build():
 
     print("\nFitting normalization stats on training data...")
     player_stats = _fit_player_stats(train_raw, feat_cols)
+    line_mean = float(train_raw["PROP_LINE"].mean())
+    line_std  = float(train_raw["PROP_LINE"].std(ddof=0))
+    print(f"  PROP_LINE z-score: mean={line_mean:.2f}  std={line_std:.2f}")
 
     print("Building sequence windows...")
-    train_seq = build_sequences(train_raw, feat_cols, player_stats)
-    val_seq   = build_sequences(val_raw,   feat_cols, player_stats)
-    test_seq  = build_sequences(test_raw,  feat_cols, player_stats)
+    train_seq = build_sequences(train_raw, feat_cols, player_stats, line_mean, line_std)
+    val_seq   = build_sequences(val_raw,   feat_cols, player_stats, line_mean, line_std)
+    test_seq  = build_sequences(test_raw,  feat_cols, player_stats, line_mean, line_std)
 
     for name, seq in [("train", train_seq), ("val", val_seq), ("test", test_seq)]:
         over_pct = (seq["LABEL"] == 1).mean() * 100 if len(seq) > 0 else 0

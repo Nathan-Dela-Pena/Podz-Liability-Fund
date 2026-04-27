@@ -72,7 +72,7 @@ from config import (
     RAW_GAMELOGS_DIR,
     WINDOW_SIZE,
 )
-from src.models.lstm import LSTMBranch
+from src.models.lstm import LSTMBranch, STATIC_FEATURES, STATIC_DIM
 from src.models.cnn import (
     CNNBranch,
     N_FRAMES_PER_CLIP,
@@ -190,9 +190,20 @@ class FusionDataset(Dataset):
         # Per-player clip-dir cache for frame fallback.
         self._player_clips = self._build_player_clip_index()
 
-        self.samples: list[tuple[np.ndarray, np.ndarray, Optional[Path], int]] = []
+        self._missing_static = [c for c in STATIC_FEATURES if c not in df.columns]
+        if self._missing_static:
+            print(f"[fusion] WARNING: {labels_csv} missing static columns "
+                  f"{self._missing_static}; filling with zeros. Re-run "
+                  f"`python -m src.processing.build_sequences` to enable "
+                  f"prop-line features.")
+
+        self.samples: list[tuple[np.ndarray, np.ndarray, np.ndarray, Optional[Path], int]] = []
         for _, row in df.iterrows():
-            seq = self._extract_seq(row)
+            seq    = self._extract_seq(row)
+            static = np.array(
+                [float(row[c]) if c in row else 0.0 for c in STATIC_FEATURES],
+                dtype=np.float32,
+            )
             player_name = str(row["PLAYER_NAME"])
             game_date   = str(row["GAME_DATE"])[:10]
             label       = int(row["LABEL"])
@@ -202,7 +213,7 @@ class FusionDataset(Dataset):
             pose_vec = self._get_pose(slug, game_id)
             clip_dir = self._get_clip_dir(slug, game_id)
 
-            self.samples.append((seq, pose_vec, clip_dir, label))
+            self.samples.append((seq, static, pose_vec, clip_dir, label))
 
     # ------------------------------------------------------------------
     def _extract_seq(self, row: pd.Series) -> np.ndarray:
@@ -298,10 +309,11 @@ class FusionDataset(Dataset):
         return len(self.samples)
 
     def __getitem__(self, idx: int):
-        seq, pose_vec, clip_dir, label = self.samples[idx]
+        seq, static, pose_vec, clip_dir, label = self.samples[idx]
 
-        seq_t  = torch.tensor(seq, dtype=torch.float32)         # (W, F)
-        pose_t = torch.tensor(pose_vec, dtype=torch.float32)    # (POSE_DIM,)
+        seq_t    = torch.tensor(seq,    dtype=torch.float32)    # (W, F)
+        static_t = torch.tensor(static, dtype=torch.float32)    # (STATIC_DIM,)
+        pose_t   = torch.tensor(pose_vec, dtype=torch.float32)  # (POSE_DIM,)
 
         if clip_dir is not None and clip_dir.exists():
             frames = sorted(clip_dir.glob("*.jpg"))
@@ -316,10 +328,10 @@ class FusionDataset(Dataset):
             frames_t = torch.zeros(N_FRAMES_PER_CLIP, 3, 224, 224, dtype=torch.float32)
 
         label_t = torch.tensor(float(label), dtype=torch.float32)
-        return seq_t, pose_t, frames_t, label_t
+        return seq_t, static_t, pose_t, frames_t, label_t
 
     def class_weights(self) -> torch.Tensor:
-        labels = np.array([s[3] for s in self.samples])
+        labels = np.array([s[4] for s in self.samples])
         counts = np.bincount(labels.astype(int))
         w_per_class = 1.0 / counts
         return torch.tensor([w_per_class[int(l)] for l in labels], dtype=torch.float32)
@@ -356,10 +368,17 @@ class FusionModel(nn.Module):
         cnn_ckpt  = cnn_ckpt  or os.path.join(CHECKPOINTS_DIR, "cnn_best.pt")
 
         if os.path.exists(lstm_ckpt):
-            self.lstm_branch.load_state_dict(
-                torch.load(lstm_ckpt, map_location="cpu"), strict=False
-            )
-            print(f"[fusion] loaded LSTM checkpoint: {lstm_ckpt}")
+            ckpt_state = torch.load(lstm_ckpt, map_location="cpu")
+            cur_state  = self.lstm_branch.state_dict()
+            compatible = {k: v for k, v in ckpt_state.items()
+                          if k in cur_state and cur_state[k].shape == v.shape}
+            dropped = sorted(set(ckpt_state) - set(compatible))
+            self.lstm_branch.load_state_dict(compatible, strict=False)
+            if dropped:
+                print(f"[fusion] loaded LSTM checkpoint with {len(dropped)} mismatched "
+                      f"keys skipped (stale architecture): {lstm_ckpt}")
+            else:
+                print(f"[fusion] loaded LSTM checkpoint: {lstm_ckpt}")
         else:
             print(f"[fusion] warning — LSTM checkpoint not found at {lstm_ckpt}, using random init")
 
@@ -390,10 +409,23 @@ class FusionModel(nn.Module):
             torch.tensor([_LSTM_INIT_LOGIT, _CNN_INIT_LOGIT], dtype=torch.float32)
         )
 
-        # ── Classifier head (two FC layers per proposal) ─────────────────
+        # ── Static-feature MLP (prop-line context) ───────────────────────
+        # Shared with what LSTMBranch uses internally, but the fusion model
+        # also gets a direct path to these features so the cross-modal
+        # classifier can condition on the prop line explicitly.
+        self.static_mlp = nn.Sequential(
+            nn.Linear(STATIC_DIM, 32),
+            nn.ReLU(inplace=True),
+            nn.Dropout(dropout),
+            nn.Linear(32, 32),
+            nn.ReLU(inplace=True),
+        )
+
+        # ── Classifier head ──────────────────────────────────────────────
+        head_in = PROJ_DIM + 32  # fused + static
         self.classifier = nn.Sequential(
-            nn.LayerNorm(PROJ_DIM),
-            nn.Linear(PROJ_DIM, 64),
+            nn.LayerNorm(head_in),
+            nn.Linear(head_in, 64),
             nn.ReLU(inplace=True),
             nn.Dropout(dropout),
             nn.Linear(64, 1),
@@ -406,9 +438,10 @@ class FusionModel(nn.Module):
 
     def forward(
         self,
-        seq:   torch.Tensor,   # (batch, WINDOW_SIZE, num_features)
-        pose:  torch.Tensor,   # (batch, 135)
-        frame: torch.Tensor,   # (batch, 3, 224, 224)
+        seq:    torch.Tensor,   # (batch, WINDOW_SIZE, num_features)
+        static: torch.Tensor,   # (batch, STATIC_DIM)
+        pose:   torch.Tensor,   # (batch, POSE_DIM)
+        frame:  torch.Tensor,   # (batch, T, 3, 224, 224) or (batch, 3, 224, 224)
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Returns
@@ -417,8 +450,8 @@ class FusionModel(nn.Module):
         branch_weights : (2,)  [w_lstm, w_cnn]
         """
         # Extract hidden representations from each branch
-        _, lstm_hidden = self.lstm_branch(seq)          # (batch, 128)
-        _, cnn_hidden  = self.cnn_branch(frame, pose)   # (batch, 192)
+        _, lstm_hidden = self.lstm_branch(seq, static)   # (batch, 128) — pure LSTM hidden
+        _, cnn_hidden  = self.cnn_branch(frame, pose)    # (batch, 192)
 
         # Project to common dimension
         h_lstm = self.lstm_proj(lstm_hidden)   # (batch, 128)
@@ -426,9 +459,11 @@ class FusionModel(nn.Module):
 
         # Weighted combination (learned end-to-end)
         w = F.softmax(self.raw_weights, dim=0)
-        fused = w[0] * h_lstm + w[1] * h_cnn  # (batch, 128)
+        fused = w[0] * h_lstm + w[1] * h_cnn   # (batch, 128)
 
-        logit = self.classifier(fused)         # (batch, 1)
+        # Inject prop-line context into the classifier head
+        s = self.static_mlp(static)            # (batch, 32)
+        logit = self.classifier(torch.cat([fused, s], dim=-1))   # (batch, 1)
         return logit, w.detach()
 
 
@@ -491,6 +526,7 @@ def train_fusion(
         list(model.lstm_proj.parameters()) +
         list(model.cnn_proj.parameters()) +
         list(model.classifier.parameters()) +
+        list(model.static_mlp.parameters()) +
         [model.raw_weights]
     )
     optimizer = torch.optim.Adam([
@@ -500,19 +536,19 @@ def train_fusion(
     criterion = nn.BCEWithLogitsLoss()
 
     os.makedirs(CHECKPOINTS_DIR, exist_ok=True)
-    best_val_acc = 0.0
+    best_val_auc = 0.0
 
     for epoch in range(1, EPOCHS + 1):
         # ── train ────────────────────────────────────────────────────────
         model.train()
         train_loss = 0.0
-        for seq, pose, frame, labels in train_loader:
-            seq, pose, frame, labels = (
-                seq.to(device), pose.to(device),
+        for seq, static, pose, frame, labels in train_loader:
+            seq, static, pose, frame, labels = (
+                seq.to(device), static.to(device), pose.to(device),
                 frame.to(device), labels.to(device),
             )
             optimizer.zero_grad()
-            logit, _ = model(seq, pose, frame)
+            logit, _ = model(seq, static, pose, frame)
             loss = criterion(logit.squeeze(1), labels)
             loss.backward()
             optimizer.step()
@@ -524,12 +560,12 @@ def train_fusion(
         all_preds, all_labels, all_probs = [], [], []
         val_loss = 0.0
         with torch.no_grad():
-            for seq, pose, frame, labels in val_loader:
-                seq, pose, frame, labels = (
-                    seq.to(device), pose.to(device),
+            for seq, static, pose, frame, labels in val_loader:
+                seq, static, pose, frame, labels = (
+                    seq.to(device), static.to(device), pose.to(device),
                     frame.to(device), labels.to(device),
                 )
-                logit, _ = model(seq, pose, frame)
+                logit, _ = model(seq, static, pose, frame)
                 loss = criterion(logit.squeeze(1), labels)
                 val_loss += loss.item() * len(seq)
                 probs = torch.sigmoid(logit.squeeze(1))
@@ -541,6 +577,10 @@ def train_fusion(
         val_loss /= len(val_loader.dataset)
         val_acc  = accuracy_score(all_labels, all_preds)
         val_f1   = f1_score(all_labels, all_preds, average="macro", zero_division=0)
+        try:
+            val_auc = roc_auc_score(all_labels, all_probs)
+        except ValueError:
+            val_auc = float("nan")
 
         w = model.branch_weights.cpu()
         print(
@@ -549,18 +589,19 @@ def train_fusion(
             f"val_loss={val_loss:.4f} | "
             f"val_acc={val_acc:.4f} | "
             f"val_f1={val_f1:.4f} | "
+            f"val_auc={val_auc:.4f} | "
             f"w_lstm={w[0]:.3f}  w_cnn={w[1]:.3f}"
         )
 
-        if val_acc > best_val_acc:
-            best_val_acc = val_acc
+        if val_auc > best_val_auc:
+            best_val_auc = val_auc
             ckpt = os.path.join(CHECKPOINTS_DIR, "fusion_best.pt")
             torch.save(model.state_dict(), ckpt)
-            print(f"    [checkpoint] saved (val_acc={val_acc:.4f})")
+            print(f"    [checkpoint] saved (val_auc={val_auc:.4f})")
 
     # ── Final branch weight report ────────────────────────────────────────
     w = model.branch_weights.cpu()
-    print(f"\n[fusion] best val accuracy : {best_val_acc:.4f}")
+    print(f"\n[fusion] best val AUC : {best_val_auc:.4f}")
     print(f"[fusion] final branch weights:")
     print(f"  LSTM  : {w[0]*100:.1f}%")
     print(f"  CNN   : {w[1]*100:.1f}%")

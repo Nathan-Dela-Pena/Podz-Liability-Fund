@@ -64,14 +64,21 @@ def eval_lstm() -> dict | None:
         num_layers=NUM_LAYERS,
         dropout=DROPOUT,
     ).to(DEVICE)
-    model.load_state_dict(torch.load(ckpt, map_location=DEVICE))
+    try:
+        model.load_state_dict(torch.load(ckpt, map_location=DEVICE))
+    except RuntimeError as e:
+        print(f"[LSTM]  stale checkpoint at {ckpt} (shape mismatch with current "
+              f"architecture). Re-train via the Colab notebook, then pull "
+              f"lstm_best.pt back to checkpoints/. Skipping.")
+        print(f"        details: {str(e).splitlines()[0]}")
+        return None
     model.eval()
 
     ds = PlayerSequenceDataset(TEST_CSV, window_size=WINDOW_SIZE)
     labels, preds, probs = [], [], []
     with torch.no_grad():
-        for x, y in ds:
-            logit, _ = model(x.unsqueeze(0).to(DEVICE))
+        for x, s, y in ds:
+            logit, _ = model(x.unsqueeze(0).to(DEVICE), s.unsqueeze(0).to(DEVICE))
             prob = torch.sigmoid(logit).item()
             labels.append(int(y.item()))
             preds.append(int(prob >= 0.5))
@@ -150,11 +157,12 @@ def eval_fusion() -> dict | None:
     ds = FusionDataset(TEST_CSV)
     labels, preds, probs = [], [], []
     with torch.no_grad():
-        for seq, pose, frame, y in ds:
-            seq   = seq.unsqueeze(0).to(DEVICE)
-            pose  = pose.unsqueeze(0).to(DEVICE)
-            frame = frame.unsqueeze(0).to(DEVICE)
-            logit, _ = model(seq, pose, frame)
+        for seq, static, pose, frame, y in ds:
+            seq    = seq.unsqueeze(0).to(DEVICE)
+            static = static.unsqueeze(0).to(DEVICE)
+            pose   = pose.unsqueeze(0).to(DEVICE)
+            frame  = frame.unsqueeze(0).to(DEVICE)
+            logit, _ = model(seq, static, pose, frame)
             prob = torch.sigmoid(logit).item()
             labels.append(int(y.item()))
             preds.append(int(prob >= 0.5))
