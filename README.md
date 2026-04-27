@@ -1,284 +1,89 @@
-# Podz-Liability-Fund
+# Podz Liability Fund
 
-CS 489/689 Deep Learning — Multimodal NBA player prop prediction system.
+CS 489/689 Deep Learning — Wilfrid Laurier University
 
-Predicts whether Golden State Warriors and San Antonio Spurs players will go **OVER or UNDER** their bookmaker-set points prop line by fusing two deep learning branches:
-
-- **Branch 1 (LSTM):** Rolling window of per-game advanced stats encoded by a bidirectional LSTM
-- **Branch 2 (CNN):** MobileNetV2 + MediaPipe Pose keypoints extracted from play-by-play clips
-- **Fusion:** Both hidden states concatenated and passed through dense layers with Adam end-to-end
-
-**Success criterion:** Fusion model ≥ 58% accuracy and ≥ 3pp over the logistic regression baseline.
+A multimodal NBA player prop prediction system that predicts **OVER / UNDER** on nightly points props for Golden State Warriors and San Antonio Spurs players. The system fuses a bidirectional LSTM (rolling game-log stats) with a MobileNetV2 CNN (pose keypoints extracted from YouTube highlights) through a learned late-fusion model.
 
 ---
 
-## Project Structure
+## Architecture
 
 ```
-api/
-  app.py                   # Flask REST API — /predict + /health endpoints
-  requirements.txt         # API-specific dependencies
-src/
-  ingestion/
-    fetch_game_logs.py     # nba_api game logs + advanced stats per player-season
-    fetch_odds.py          # The Odds API — prop lines via multi-snapshot strategy
-    fetch_clips.py         # stats.nba.com play-by-play video clips (FGA events)
-    fetch_youtube_clips.py # YouTube highlights fallback via yt-dlp
-  processing/
-    build_game_records.py  # merge game logs + odds → labeled records
-    build_sequences.py     # rolling-window sequences + chronological CSV splits
-    extract_frames.py      # sample frames from .mp4 clips via OpenCV
-    extract_pose.py        # YOLO person detection + MediaPipe Pose per clip
-  models/
-    baseline.py            # logistic regression baseline
-    lstm.py                # bidirectional single-layer LSTM branch
-    cnn.py                 # MobileNetV2 + pose head CNN branch
-    fusion.py              # late-fusion model (LSTM + CNN)
-scripts/
-  run_ingestion.py         # fetch game logs + odds
-  run_processing.py        # build records + sequences
-  run_baseline.py          # train + evaluate logistic regression baseline
-  run_training.py          # train LSTM branch
-  run_evaluation.py        # evaluate LSTM checkpoint on all splits
-  run_cnn_pipeline.py      # full CNN + fusion pipeline (fetch → pose → train)
-notebooks/
-  train_colab.ipynb        # Colab notebook — CNN + fusion training on T4 GPU
-data/
-  raw/
-    game_logs/             # per-player-season CSVs from nba_api
-    odds/                  # all_odds.json from The Odds API
-    clips/                 # .mp4 clips per player per event
-  processed/               # train.csv / val.csv / test.csv (committed)
-  frames/                  # sampled JPG frames per clip (gitignored)
-  pose/                    # per-player pose feature CSVs (gitignored)
-checkpoints/               # saved model weights + results JSON
-config.py                  # all hyperparameters and path constants
+┌─────────────────────────────────────────────────────────────────┐
+│                         DATA SOURCES                            │
+│  nba_api (game logs)   The Odds API (prop lines)   YouTube     │
+└────────────┬──────────────────┬────────────────────────┬────────┘
+             │                  │                        │
+             ▼                  ▼                        ▼
+    build_game_records.py   fetch_odds.py    fetch_youtube_clips.py
+    build_sequences.py                       extract_frames.py
+             │                               extract_pose.py
+             ▼                                     │
+    data/processed/                          data/pose/
+    train.csv / val.csv / test.csv           <player>.csv (135-dim)
+             │                                     │
+    ┌────────▼────────┐               ┌────────────▼────────────┐
+    │  Branch 1: LSTM │               │   Branch 2: CNN         │
+    │  BiLSTM(64)     │               │   MobileNetV2 + Pose    │
+    │  → hidden (128) │               │   → hidden (192)        │
+    └────────┬────────┘               └────────────┬────────────┘
+             │                                     │
+             └──────────────┬──────────────────────┘
+                            ▼
+              ┌─────────────────────────┐
+              │    Fusion Model         │
+              │  Learned softmax weight │
+              │  ~61% LSTM / ~39% CNN   │
+              │  → LayerNorm → Linear   │
+              │  → logit (OVER/UNDER)   │
+              └────────────┬────────────┘
+                           │
+                    api/app.py  ←── The Odds API (live prop lines)
+                           │
+                   frontend/index.html
+                   (8-ball UI, picks cycle inside white circle)
 ```
-
----
-
-## Data Collection
-
-### Statistical Branch
-
-Game logs are pulled from **nba_api** (official NBA stats API, no key required). Prop lines are fetched from **The Odds API** and matched to each game by date and player name.
-
-```bash
-python scripts/run_ingestion.py   # fetch game logs + prop lines
-python scripts/run_processing.py  # build labeled records + rolling-window sequences
-```
-
-**Splits (chronological, no shuffling — critical to prevent leakage):**
-
-| Split | Date Range            | Sequences |
-|-------|-----------------------|-----------|
-| Train | Oct 2023 – Feb 2025   | 461       |
-| Val   | Mar 2025 – Apr 2025   | 57        |
-| Test  | Oct 2025 – Apr 2026   | 701       |
-
-**Features (6 × 5-game window = 30-dim input):**
-`PTS`, `TS%`, `eFG%`, `USG%`, `OPP_DRTG`, `MIN`
-
-All features are z-score normalized per player using statistics computed on the training split only (no test leakage).
-
-**Label:** `1 = OVER` (player scored more than their bookmaker prop line), `0 = UNDER`.
-
-### Vision Branch
-
-Play-by-play FGA clips are downloaded via the **stats.nba.com** video API using `PlayByPlayV3` endpoint. Where NBA API clips are unavailable, **YouTube highlights** are used as a fallback via `yt-dlp`.
-
-Player identification in multi-person frames uses **YOLOv8n** person detection followed by HSV jersey color scoring (Warriors blue/gold, Spurs black/white) to select the correct athlete's crop before running **MediaPipe Pose**.
-
-```bash
-python scripts/run_cnn_pipeline.py   # full: fetch → frames → pose → train CNN → train fusion
-```
-
-Or step by step:
-
-```bash
-python -m src.ingestion.fetch_clips        # download FGA clips
-python -m src.processing.extract_frames   # sample frames
-python -m src.processing.extract_pose     # YOLO + MediaPipe → 135-dim pose vectors
-python -m src.models.cnn                  # train CNN branch
-```
-
-**Pose features per clip:** 33 landmarks × (x, y, z, visibility) = 132 stats + 3 derived fatigue signals (vertical acceleration, stride length variance, shoulder droop) = **135-dim vector**.
-
-Because the vision pipeline is compute-intensive, CNN and fusion training are designed to run on **Google Colab with a T4 GPU** (see Colab section below).
-
----
-
-## Model Architecture
-
-### Baseline — Logistic Regression
-
-Flattened 30-dim rolling window → `LogisticRegression(class_weight='balanced')`.
-
-| Split | Accuracy | F1 (macro) | AUROC |
-|-------|----------|------------|-------|
-| Train | 57.3%    | 0.572      | 0.616 |
-| Val   | 45.6%    | 0.439      | 0.355 |
-| Test  | 49.9%    | 0.496      | 0.510 |
-
-```bash
-python scripts/run_baseline.py   # saves checkpoints/baseline_results.json
-```
-
----
-
-### Branch 1 — Bidirectional LSTM
-
-```
-Input  (batch, 5, 6)
-  → BiLSTM(input=6, hidden=64, bidirectional=True)
-  → hidden (batch, 128)   [fwd=64 + bwd=64]
-  → Dropout(0.3)
-  → Linear(128→64) + ReLU + Dropout(0.3)
-  → Linear(64→1)
-Output (batch, 1)  — logit → probability of OVER
-```
-
-**Hyperparameters:**
-
-| Parameter     | Value  |
-|---------------|--------|
-| WINDOW_SIZE   | 5      |
-| HIDDEN_SIZE   | 64     |
-| NUM_LAYERS    | 1      |
-| DROPOUT       | 0.3    |
-| LR            | 1e-3   |
-| EPOCHS        | 50     |
-| BATCH_SIZE    | 32     |
-
-`WeightedRandomSampler` addresses class imbalance. Early stopping on validation accuracy saves the best checkpoint.
-
-```bash
-python scripts/run_training.py     # saves checkpoints/lstm_best.pt
-python scripts/run_evaluation.py   # saves checkpoints/lstm_results.json
-```
-
----
-
-### Branch 2 — MobileNetV2 + Pose (CNN)
-
-```
-Frame (3, 224, 224) → MobileNetV2 backbone → Linear(1280→256) → ReLU → Linear(256→128)
-Pose  (135,)        → Linear(135→64)        → ReLU
-Concat (192,) → Dropout(0.3) → Linear(192→1)
-Output (batch, 1)  — logit → probability of OVER
-```
-
-Training improvements: val-AUC checkpoint, patience=10 early stopping, `ReduceLROnPlateau(factor=0.5, patience=5)`, gradient clipping (`max_norm=1.0`).
-
-Checkpoint saved to `checkpoints/cnn_best.pt`.
-
----
-
-### Fusion Model
-
-```
-LSTM hidden  (128) → Linear(128→128) ─┐
-                                       ├─ weighted sum (128) → LayerNorm
-CNN  hidden  (192) → Linear(192→128) ─┘
-  → Linear(128→64) → ReLU → Dropout(0.3) → Linear(64→1)
-Output (batch, 1)  — logit → probability of OVER
-```
-
-Branch contributions controlled by a learnable softmax weight pair (initialised ~61% LSTM / ~39% CNN). Adam uses two learning rates: fusion head `lr=1e-3`, branch encoders `lr=1e-4`.
-
-Where CNN pose/frame data is absent for a sample, CNN inputs are zeroed out so the model can train on stats-only samples.
-
-Checkpoint saved to `checkpoints/fusion_best.pt`.
-
----
-
-## Training on Google Colab
-
-The CNN and fusion models require a GPU. Use the provided Colab notebook:
-
-1. Open `notebooks/train_colab.ipynb` in Google Colab
-2. Set runtime to **T4 GPU** (Runtime → Change runtime type → GPU)
-3. Add a shortcut to the `podz-liability-fund` folder in your Google Drive (Shared with me → right-click → Organize → Add shortcut → My Drive)
-4. Run all cells top to bottom (~40 min CNN + ~15 min fusion)
-5. Before running Step 6 (fusion), **upload `checkpoints/lstm_best.pt`** from your local machine to `My Drive/podz-liability-fund/checkpoints/`
-
-Checkpoints are saved directly to Drive — no manual download needed.
-
----
-
-## REST API
-
-The Flask API serves real-time predictions using the latest available checkpoint (`fusion_best.pt` → `lstm_best.pt` fallback).
-
-### Running locally
-
-```bash
-pip install -r api/requirements.txt
-python api/app.py                  # dev server on :5000
-# or
-gunicorn api.app:app               # production
-```
-
-### Endpoints
-
-**`GET /predict`**
-
-Returns OVER/UNDER recommendation + confidence for all tracked players based on their last 5 regular-season games fetched live from nba_api.
-
-```json
-{
-  "model_mode": "lstm",
-  "players": [
-    {
-      "name": "Stephen Curry",
-      "recommendation": "OVER",
-      "confidence": 0.7231,
-      "prop_line": 27.5,
-      "stat_type": "points"
-    }
-  ]
-}
-```
-
-**`GET /health`**
-
-```json
-{
-  "status": "ok",
-  "model_mode": "lstm",
-  "device": "cpu",
-  "checkpoints": {
-    "lstm_best.pt": "1.2 MB"
-  }
-}
-```
-
-Rate limited to **10 requests / minute per IP**.
-
-### Environment variables
-
-| Variable          | Default        | Description                       |
-|-------------------|----------------|-----------------------------------|
-| `CHECKPOINTS_DIR` | `checkpoints/` | Override checkpoint directory     |
-| `MODEL_DEVICE`    | auto-detect    | `cuda` or `cpu`                   |
-
----
-
-## Understanding Predictions
-
-- **OVER** — model predicts the player will score more than their bookmaker prop line
-- **UNDER** — model predicts the player will score less
-- **Confidence** — distance of the predicted probability from 0.5 (i.e. 0.72 means the model assigns 72% probability to the predicted side)
-
-The model is trained on 2023–2026 Warriors and Spurs game data. Predictions are only meaningful for tracked players during active NBA regular seasons. This is a research project, not a betting tool.
 
 ---
 
 ## Players Tracked
 
-**Golden State Warriors:** Curry, Green, Kuminga, Moody, Payton II, Looney, Podziemski, Santos, Post, Richard, Spencer, Butler, S. Curry, Horford, Melton, Porzingis, Wiggins
+**Golden State Warriors (22 players):**
+Stephen Curry, Draymond Green, Jonathan Kuminga, Moses Moody, Gary Payton II, Kevon Looney, Brandin Podziemski, Gui Santos, Quinten Post, Will Richard, Pat Spencer, Jimmy Butler, Seth Curry, Al Horford, De'Anthony Melton, Kristaps Porzingis, Andrew Wiggins
 
-**San Antonio Spurs:** Wembanyama, Fox, K. Johnson, Castle, Harper
+**San Antonio Spurs (5 players):**
+Victor Wembanyama, De'Aaron Fox, Keldon Johnson, Stephon Castle, Dylan Harper
+
+---
+
+## Dataset
+
+| Split | Date Range          | Sequences |
+|-------|---------------------|-----------|
+| Train | Oct 2023 – Feb 2025 | 654       |
+| Val   | Mar 2025 – Apr 2025 | 85        |
+| Test  | Oct 2025 – Apr 2026 | 701       |
+
+**Splits are chronological (no shuffling)** — test set is never touched during training to prevent look-ahead leakage.
+
+**Input features (6 × 5-game rolling window = 30-dim):**
+`PTS`, `TS%`, `eFG%`, `USG%`, `OPP_DRTG`, `MIN`
+
+All features are z-score normalized per column using training-split statistics only.
+
+**Label:** `1 = OVER` (player scored more than their prop line), `0 = UNDER`.
+
+---
+
+## Results
+
+| Model          | Test Accuracy | Test F1 (macro) | Test AUROC |
+|----------------|---------------|-----------------|------------|
+| Baseline (LogReg) | 51.4%      | 0.503           | 0.516      |
+| **LSTM**       | **51.6%**     | **0.387**       | **0.530**  |
+| CNN + Fusion   | *not yet trained* | —           | —          |
+
+> The LSTM modestly outperforms the logistic regression baseline on AUROC. F1 is low because the model currently predicts UNDER for nearly all samples — class imbalance in the test set. The fusion model is expected to improve both metrics once CNN training completes on Colab.
 
 ---
 
@@ -287,23 +92,286 @@ The model is trained on 2023–2026 Warriors and Spurs game data. Predictions ar
 ```bash
 git clone https://github.com/Nathan-Dela-Pena/Podz-Liability-Fund.git
 cd Podz-Liability-Fund
+python -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Create a `.env` file:
+Create a `.env` file in the repo root:
 
 ```
-ODDS_API_KEY=<your_key_from_the-odds-api.com>
+ODDS_API_KEY=<your key from the-odds-api.com>
 ```
-
-**Key dependencies:** `torch`, `torchvision`, `mediapipe`, `opencv-python`, `ultralytics`, `nba_api`, `scikit-learn`, `pandas`, `yt-dlp`
 
 ---
 
-## Limitations & Future Work
+## Data Pipeline
 
-- Vision branch relies on weak supervision (YouTube clips with player-level labels, not clip-level ground truth) — true per-clip shot outcomes would improve CNN signal quality
-- Jersey color heuristics are hardcoded per team; a learned re-identification model would generalise better
-- Prop lines are matched by date and player name — missing lines fall back to a rolling average
-- Model covers only two NBA teams; expanding to the full league would require more data and likely a player-embedding layer
-- No live odds integration — prop lines in `/predict` come from cached historical snapshots; real deployment would need a live odds feed
+### 1. Game logs + prop lines
+
+```bash
+python scripts/run_ingestion.py    # pulls nba_api game logs + The Odds API prop lines
+python scripts/run_processing.py   # merges into labeled records + rolling-window CSVs
+```
+
+Outputs: `data/processed/train.csv`, `val.csv`, `test.csv`
+
+### 2. Video frames + pose (vision branch)
+
+Video clips were sourced from **YouTube highlights** via `yt-dlp` (NBA API video endpoint was unreliable). Player identification in multi-person frames uses a two-stage pipeline:
+
+1. **YOLOv8n** detects all persons in the frame
+2. **HSV jersey color scoring** picks the target player's bounding box (Warriors blue/gold, Spurs black/white)
+3. **MediaPipe Pose** extracts 33 landmarks from the selected crop
+
+```bash
+python -m src.ingestion.fetch_youtube_clips   # downloads highlights (yt-dlp)
+python -m src.processing.extract_frames       # samples frames from clips
+python -m src.processing.extract_pose         # YOLO + MediaPipe → 135-dim pose CSVs
+```
+
+**Pose vector (135-dim per clip):**
+33 landmarks × (x, y, z, visibility) = 132 stats + 3 derived fatigue signals (vertical acceleration, stride length variance, shoulder droop).
+
+Frames and pose CSVs are **gitignored** (large binary/float data). They live on Google Drive for Colab training.
+
+---
+
+## Training
+
+### Branch 1 — Bidirectional LSTM
+
+**Architecture:**
+```
+Input  (batch, 5, 6)
+  → BiLSTM(hidden=64, bidirectional=True)
+  → hidden (batch, 128)
+  → Dropout(0.35)
+  → Linear(128 → 64) + ReLU + Dropout(0.35)
+  → Linear(64 → 1)
+Output (batch, 1) — logit
+```
+
+**Hyperparameters:**
+
+| Parameter      | Value  |
+|----------------|--------|
+| Window size    | 5 games |
+| Hidden size    | 64     |
+| Layers         | 1      |
+| Dropout        | 0.35   |
+| Learning rate  | 1e-3   |
+| Weight decay   | 5e-5   |
+| Batch size     | 32     |
+| Max epochs     | 60     |
+| Early stopping | patience = 7 (val accuracy) |
+| LR schedule    | ReduceLROnPlateau(factor=0.5, patience=5) |
+| Optimizer      | Adam   |
+| Loss           | BCEWithLogitsLoss |
+| Imbalance      | WeightedRandomSampler |
+
+**Run locally:**
+```bash
+source .venv/bin/activate
+python scripts/run_training.py     # trains → checkpoints/lstm_best.pt
+python scripts/run_evaluation.py   # evaluates all splits → checkpoints/lstm_results.json
+```
+
+Checkpoint is already trained and committed at `checkpoints/lstm_best.pt` (0.2 MB).
+
+---
+
+### Branch 2 — MobileNetV2 + Pose (CNN)
+
+**Architecture:**
+```
+Frame (3, 224, 224) → MobileNetV2 backbone → Linear(1280 → 256) → ReLU → Linear(256 → 128)
+Pose  (135,)        → Linear(135 → 64) → ReLU
+Concat (192,) → Dropout(0.35) → Linear(192 → 1)
+Output (batch, 1) — logit
+```
+
+**Hyperparameters:** Same as LSTM (Adam, lr=1e-3, BCEWithLogitsLoss, batch=32, max epochs=60, early stopping patience=10, ReduceLROnPlateau).
+
+**Training on Google Colab (T4 GPU — required, ~40 min):**
+
+1. Upload `checkpoints/lstm_best.pt` to `My Drive/podz-liability-fund/checkpoints/` on Google Drive
+2. Open `notebooks/train_colab.ipynb` in Colab
+3. Set runtime: **Runtime → Change runtime type → T4 GPU**
+4. Add a Drive shortcut: in Drive, find `podz-liability-fund` under "Shared with me" → right-click → Organize → Add shortcut → My Drive
+5. Run all cells top to bottom:
+   - **Cell 1** — mounts Drive
+   - **Cell 2** — clones `feat/fusion` branch, installs dependencies
+   - **Cell 3** — overrides config paths to point at Drive
+   - **Cell 4** — verifies GPU
+   - **Cell 5** — trains CNN branch → saves `cnn_best.pt` to Drive (~40 min)
+   - **Cell 6** — verifies `lstm_best.pt` is present, then trains fusion model → saves `fusion_best.pt` (~15 min)
+   - **Cell 7** — lists saved checkpoints
+
+Checkpoints land in `My Drive/podz-liability-fund/checkpoints/` — no manual download needed.
+
+---
+
+### Fusion Model
+
+**Architecture:**
+```
+LSTM hidden (128) → Linear(128 → 128) ─┐
+                                        ├─ softmax-weighted sum (128) → LayerNorm
+CNN  hidden (192) → Linear(192 → 128) ─┘
+  → Linear(128 → 64) → ReLU → Dropout(0.35) → Linear(64 → 1)
+```
+
+Learnable branch weights (softmax pair) initialised ~61% LSTM / ~39% CNN. Printed after each epoch.
+
+**Optimizer:** Adam with two learning rates — fusion head `lr=1e-3`, branch encoders `lr=1e-4` (gentle fine-tune). Where CNN data is absent for a sample, CNN inputs are zeroed out.
+
+---
+
+## Running the API Locally
+
+```bash
+source .venv/bin/activate
+pip install -r api/requirements.txt
+ODDS_API_KEY=your_key python api/app.py
+```
+
+Then open **http://localhost:8080**
+
+### Endpoints
+
+**`GET /predict`**
+
+1. Fetches today's NBA `player_points` props from The Odds API (per-event endpoint)
+2. Fuzzy-matches each player name against the 22 trained players
+3. Pulls their most recent rolling-stats window from `data/processed/test.csv`
+4. Runs the LSTM (or fusion, if `fusion_best.pt` exists) → OVER/UNDER + confidence
+5. Returns all matched players sorted by confidence descending
+
+If `ODDS_API_KEY` is missing or The Odds API returns no data, the endpoint **falls back** to CSV-based predictions using all trained players and their stored prop lines.
+
+Response includes `"source": "live" | "fallback"`.
+
+**`GET /health`** — returns model mode, device, checkpoint file sizes.
+
+### Environment variables
+
+| Variable          | Required | Description                              |
+|-------------------|----------|------------------------------------------|
+| `ODDS_API_KEY`    | Recommended | Key from [the-odds-api.com](https://the-odds-api.com) — free tier has 500 requests/month |
+| `CHECKPOINTS_DIR` | No       | Override checkpoint directory (default: `checkpoints/`) |
+| `MODEL_DEVICE`    | No       | `cuda` or `cpu` (default: auto-detect)   |
+
+---
+
+## Frontend
+
+The UI is a cinematic space-themed page with a 3D 8-ball as the hero element. Tap the ball (or shake on mobile) to fetch predictions. Picks cycle inside the white circle of the 8-ball — player last name, OVER/UNDER in green/red, and the prop line — rotating every 3 seconds.
+
+**Configuring the API URL** (in `frontend/index.html`):
+
+```js
+const API_BASE = window.location.hostname === 'localhost'
+  ? ''
+  : 'https://your-render-app.onrender.com';  // ← update before deploying to Vercel
+```
+
+---
+
+## Deployment
+
+### API → Render
+
+1. Connect the GitHub repo to a new Render **Web Service**
+2. Set **Root directory:** `api`
+3. Set **Build command:** `pip install -r requirements.txt`
+4. Set **Start command:** `gunicorn app:app`
+5. Add environment variable: `ODDS_API_KEY=<your key>`
+6. Note the service URL (e.g. `https://podz-api.onrender.com`)
+
+### Frontend → Vercel
+
+1. Connect the GitHub repo to a new Vercel project
+2. Set **Root directory:** `frontend`
+3. No build step needed (pure HTML)
+4. Update `API_BASE` in `frontend/index.html` to your Render URL before deploying
+
+---
+
+## Project Structure
+
+```
+api/
+  app.py               Flask API — /predict (live + fallback), /health, GET /
+  requirements.txt     API dependencies (flask, torch, requests, etc.)
+frontend/
+  index.html           8-ball UI — single file, no build step
+src/
+  ingestion/
+    fetch_game_logs.py       nba_api game logs + advanced stats
+    fetch_odds.py            The Odds API prop line snapshots
+    fetch_clips.py           stats.nba.com FGA video clips
+    fetch_youtube_clips.py   YouTube highlights via yt-dlp (fallback)
+  processing/
+    build_game_records.py    merge logs + odds → labeled records
+    build_sequences.py       rolling-window sequences + chronological splits
+    extract_frames.py        sample frames from .mp4 clips via OpenCV
+    extract_pose.py          YOLO person detection + MediaPipe Pose
+  models/
+    baseline.py              logistic regression baseline
+    lstm.py                  bidirectional LSTM branch
+    cnn.py                   MobileNetV2 + pose head CNN branch
+    fusion.py                late-fusion model (LSTM + CNN)
+scripts/
+  run_ingestion.py     fetch game logs + odds
+  run_processing.py    build records + sequences
+  run_baseline.py      train + evaluate logistic regression
+  run_training.py      train LSTM
+  run_evaluation.py    evaluate LSTM checkpoint on all splits
+  run_cnn_pipeline.py  full CNN pipeline (fetch → frames → pose → train → fusion)
+notebooks/
+  train_colab.ipynb    Colab notebook — CNN + fusion on T4 GPU
+data/
+  raw/                 game logs, odds snapshots, clips (gitignored)
+  processed/           train/val/test CSVs (committed — 654/85/701 sequences)
+checkpoints/
+  lstm_best.pt         ✅ trained (0.2 MB)
+  cnn_best.pt          ❌ not yet trained
+  fusion_best.pt       ❌ not yet trained
+config.py              all hyperparameters and path constants
+```
+
+---
+
+## Limitations
+
+- **Small training set:** 1,440 total sequences across 22 players from two teams only. Real-world performance requires more teams and seasons.
+- **LSTM-only until fusion is trained:** The API currently uses only the LSTM branch. The CNN + fusion path is complete in code but `cnn_best.pt` and `fusion_best.pt` haven't been produced yet.
+- **Weak video supervision:** YouTube highlights provide clip-level labels derived from each player's historical OVER/UNDER distribution rather than game-specific outcomes. This introduces label noise in the CNN training data.
+- **LSTM F1 is poor on UNDER class:** The model predicts UNDER very rarely (see confusion matrix in `lstm_results.json`). `WeightedRandomSampler` helps during training but test-set class distribution still skews predictions.
+- **Prop line source:** The API uses the first bookmaker returned by The Odds API rather than consensus lines. Lines can vary ±0.5 pts across books.
+- **No live stats:** The rolling-stats window comes from the most recent row in `test.csv`, not a live nba_api call. The window is from the last game in the CSV, which may be several days old.
+
+---
+
+## What Still Needs to Be Done
+
+| Task | Status |
+|------|--------|
+| LSTM training | ✅ Complete — `lstm_best.pt` committed |
+| CNN training on Colab | ⏳ Pending — requires Colab T4 + Drive frames/pose data |
+| Fusion training on Colab | ⏳ Pending — runs automatically after CNN in the notebook |
+| Upload `fusion_best.pt` to repo | ⏳ After Colab training, copy from Drive → `checkpoints/` |
+| Live rolling stats via nba_api | Optional — currently uses CSV snapshot |
+| Expand to more teams | Future work |
+
+---
+
+## Requirements
+
+```bash
+pip install -r requirements.txt          # full pipeline
+pip install -r api/requirements.txt      # API only
+```
+
+Key dependencies: `torch`, `torchvision`, `mediapipe`, `opencv-python`, `ultralytics` (YOLOv8), `nba_api`, `yt-dlp`, `scikit-learn`, `flask`, `flask-cors`, `requests`
