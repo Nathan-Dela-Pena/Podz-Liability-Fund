@@ -18,6 +18,11 @@ data/eda_figures/
 data/frames/
 data/pose/
 
+# Fetch / pipeline logs (may contain API keys in error URLs)
+*.log
+data/*.log
+logs/
+
 # Model checkpoints
 checkpoints/
 
