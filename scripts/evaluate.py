@@ -33,6 +33,8 @@ from config import (
 from src.models.lstm import LSTMBranch, PlayerSequenceDataset
 from src.models.cnn import CNNBranch, ClipIdentityDataset
 from src.models.fusion import FusionDataset, FusionModel
+from src.models.xgb_model import eval_xgb
+from src.models.per_player import eval_per_player
 
 TEST_CSV = os.path.join(PROCESSED_DIR, "test.csv")
 DEVICE = (
@@ -179,9 +181,11 @@ def main():
     print(f"Evaluating on {TEST_CSV}  (device={DEVICE})\n")
 
     results = {
-        "LSTM":   eval_lstm(),
-        "CNN":    eval_cnn(),
-        "Fusion": eval_fusion(),
+        "LSTM":      eval_lstm(),
+        "CNN":       eval_cnn(),
+        "Fusion":    eval_fusion(),
+        "XGB":       eval_xgb(TEST_CSV),
+        "PerPlayer": eval_per_player(TEST_CSV),
     }
 
     # Print table
