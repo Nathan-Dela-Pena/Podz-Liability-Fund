@@ -162,8 +162,13 @@ class LSTMBranch(nn.Module):
             bidirectional=True,
             dropout=dropout if num_layers > 1 else 0.0,
         )
-        self.dropout = nn.Dropout(dropout)
-        lstm_out_dim = hidden_size * 2  # bidirectional
+        self.dropout  = nn.Dropout(dropout)
+        lstm_out_dim  = hidden_size * 2  # bidirectional
+
+        # Attention over the sequence — lets the model focus on the most
+        # informative game in the window rather than always using the last step.
+        self.attn_layer = nn.Linear(lstm_out_dim, 1, bias=False)
+        self.layer_norm = nn.LayerNorm(lstm_out_dim)
 
         # Static-feature MLP — small projection that lets the model learn
         # non-linear interactions on the prop-line context.
@@ -192,12 +197,13 @@ class LSTMBranch(nn.Module):
         seq    : (batch, seq_len, input_size)
         static : (batch, STATIC_DIM) — defaults to zeros if None
         """
-        _, (h_n, _) = self.lstm(seq)
-        # h_n: (num_layers * 2, batch, hidden_size) — grab last layer's fwd/bwd
-        fwd = h_n[-2]
-        bwd = h_n[-1]
-        hidden = torch.cat([fwd, bwd], dim=-1)   # (batch, hidden_size*2)
-        hidden = self.dropout(hidden)
+        outputs, _ = self.lstm(seq)             # (batch, seq_len, hidden_size*2)
+        # Attention over all timesteps — score each step, softmax, weighted sum
+        scores  = self.attn_layer(outputs)      # (batch, seq_len, 1)
+        weights = torch.softmax(scores, dim=1)  # (batch, seq_len, 1)
+        hidden  = (weights * outputs).sum(dim=1)  # (batch, hidden_size*2)
+        hidden  = self.layer_norm(hidden)
+        hidden  = self.dropout(hidden)
 
         if static is None:
             static = torch.zeros(seq.size(0), STATIC_DIM,

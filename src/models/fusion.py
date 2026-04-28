@@ -403,11 +403,22 @@ class FusionModel(nn.Module):
         self.lstm_proj = nn.Linear(LSTM_HIDDEN_DIM, PROJ_DIM)
         self.cnn_proj  = nn.Linear(CNN_HIDDEN_DIM,  PROJ_DIM)
 
-        # ── Learnable branch weights ──────────────────────────────────────
-        # softmax([0.45, 0.00]) ≈ [0.611, 0.389] → LSTM majority (~61 %)
-        self.raw_weights = nn.Parameter(
-            torch.tensor([_LSTM_INIT_LOGIT, _CNN_INIT_LOGIT], dtype=torch.float32)
+        # ── Input-conditioned gating ──────────────────────────────────────
+        # Instead of a fixed global weight pair, a small MLP decides per-sample
+        # how much to trust LSTM vs CNN based on both embeddings.
+        # When CNN input is uninformative (zero frames), its projection will be
+        # near-zero and the gate will naturally downweight it.
+        self.gate = nn.Sequential(
+            nn.Linear(PROJ_DIM * 2, 64),
+            nn.ReLU(inplace=True),
+            nn.Linear(64, 2),
         )
+        # Bias gate toward LSTM at init (~61/39) since CNN embeddings start noisy
+        with torch.no_grad():
+            self.gate[-1].bias.copy_(
+                torch.tensor([_LSTM_INIT_LOGIT, _CNN_INIT_LOGIT])
+            )
+        self._last_weights = torch.tensor([0.611, 0.389])  # for logging
 
         # ── Static-feature MLP (prop-line context) ───────────────────────
         # Shared with what LSTMBranch uses internally, but the fusion model
@@ -433,8 +444,8 @@ class FusionModel(nn.Module):
 
     @property
     def branch_weights(self) -> torch.Tensor:
-        """Returns softmax-normalised [w_lstm, w_cnn] (detached for logging)."""
-        return F.softmax(self.raw_weights, dim=0).detach()
+        """Returns last batch's mean [w_lstm, w_cnn] (detached for logging)."""
+        return self._last_weights
 
     def forward(
         self,
@@ -457,9 +468,10 @@ class FusionModel(nn.Module):
         h_lstm = self.lstm_proj(lstm_hidden)   # (batch, 128)
         h_cnn  = self.cnn_proj(cnn_hidden)     # (batch, 128)
 
-        # Weighted combination (learned end-to-end)
-        w = F.softmax(self.raw_weights, dim=0)
-        fused = w[0] * h_lstm + w[1] * h_cnn   # (batch, 128)
+        # Input-conditioned gating — weight depends on both embeddings
+        w = F.softmax(self.gate(torch.cat([h_lstm, h_cnn], dim=-1)), dim=-1)  # (batch, 2)
+        fused = w[:, 0:1] * h_lstm + w[:, 1:2] * h_cnn   # (batch, 128)
+        self._last_weights = w.mean(dim=0).detach().cpu()
 
         # Inject prop-line context into the classifier head
         s = self.static_mlp(static)            # (batch, 32)
@@ -527,7 +539,7 @@ def train_fusion(
         list(model.cnn_proj.parameters()) +
         list(model.classifier.parameters()) +
         list(model.static_mlp.parameters()) +
-        [model.raw_weights]
+        list(model.gate.parameters())
     )
     optimizer = torch.optim.Adam([
         {"params": head_params,   "lr": LEARNING_RATE},
@@ -535,8 +547,10 @@ def train_fusion(
     ])
     criterion = nn.BCEWithLogitsLoss()
 
+    from config import PATIENCE
     os.makedirs(CHECKPOINTS_DIR, exist_ok=True)
-    best_val_auc = 0.0
+    best_val_auc  = 0.0
+    patience_ctr  = 0
 
     for epoch in range(1, EPOCHS + 1):
         # ── train ────────────────────────────────────────────────────────
@@ -551,6 +565,7 @@ def train_fusion(
             logit, _ = model(seq, static, pose, frame)
             loss = criterion(logit.squeeze(1), labels)
             loss.backward()
+            nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
             train_loss += loss.item() * len(seq)
         train_loss /= len(train_loader.dataset)
@@ -595,9 +610,15 @@ def train_fusion(
 
         if val_auc > best_val_auc:
             best_val_auc = val_auc
+            patience_ctr = 0
             ckpt = os.path.join(CHECKPOINTS_DIR, "fusion_best.pt")
             torch.save(model.state_dict(), ckpt)
             print(f"    [checkpoint] saved (val_auc={val_auc:.4f})")
+        else:
+            patience_ctr += 1
+            if patience_ctr >= PATIENCE:
+                print(f"\n  [early stop] val_auc hasn't improved for {PATIENCE} epochs")
+                break
 
     # ── Final branch weight report ────────────────────────────────────────
     w = model.branch_weights.cpu()

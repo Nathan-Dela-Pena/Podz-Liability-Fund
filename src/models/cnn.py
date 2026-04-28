@@ -337,8 +337,11 @@ class CNNBranch(nn.Module):
 
         # ── Visual stream ────────────────────────────────────────────────
         backbone = models.mobilenet_v2(weights=models.MobileNet_V2_Weights.IMAGENET1K_V1)
-        # Strip MobileNetV2's classifier; we use it as a 1280-d feature extractor.
         backbone.classifier = nn.Identity()
+        # Freeze backbone — with only ~55 clips, fine-tuning 3.4M MobileNet
+        # params causes immediate overfit. ImageNet features are strong enough.
+        for param in backbone.parameters():
+            param.requires_grad = False
         self.visual_features = backbone           # input (B,3,224,224) → (B,1280)
 
         self.visual_proj = nn.Sequential(
@@ -487,13 +490,15 @@ def train_cnn(
     val_loader   = DataLoader(val_subset,   batch_size=BATCH_SIZE, shuffle=False,
                               num_workers=0)
 
-    model     = CNNBranch().to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE,
-                                 weight_decay=1e-4)
+    model = CNNBranch().to(device)
+    # Only optimize non-frozen params (backbone is frozen)
+    trainable = [p for p in model.parameters() if p.requires_grad]
+    optimizer = torch.optim.Adam(trainable, lr=LEARNING_RATE, weight_decay=1e-4)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer, T_max=max(EPOCHS, 1)
     )
-    criterion = nn.CrossEntropyLoss()
+    # Label smoothing reduces overconfidence on the tiny clip pool
+    criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
 
     os.makedirs(CHECKPOINTS_DIR, exist_ok=True)
     best_val_acc  = -1.0
