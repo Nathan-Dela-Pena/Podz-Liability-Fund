@@ -8,80 +8,70 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --ball-sz:   min(70vmin, 520px);
-      --ball-crop: 0.40;
+      --ball-sz: min(60vmin, 400px);
     }
 
     html, body {
       width: 100%; height: 100%;
       background: #000;
-      overflow: hidden;
       color: #fff;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
       -webkit-font-smoothing: antialiased;
+      overflow: hidden;
     }
 
     body::before {
       content: '';
       position: fixed; inset: 0; z-index: 0;
       background:
-        radial-gradient(ellipse 90% 55% at 50% -5%,  #0c1f4a 0%, transparent 60%),
-        radial-gradient(ellipse 50% 40% at 15% 90%,  #080e28 0%, transparent 50%),
-        radial-gradient(ellipse 60% 35% at 85% 85%,  #060c22 0%, transparent 50%),
-        linear-gradient(180deg, #050a18 0%, #03060f 50%, #000 100%);
+        radial-gradient(ellipse 80% 50% at 50% -10%, #0c1f4a 0%, transparent 60%),
+        radial-gradient(ellipse 50% 40% at 15% 95%,  #080e28 0%, transparent 50%),
+        radial-gradient(ellipse 60% 35% at 85% 90%,  #060c22 0%, transparent 50%),
+        linear-gradient(180deg, #050a18 0%, #03060f 60%, #000 100%);
       pointer-events: none;
     }
 
-    /* ── Scene ─────────────────────────────────────────────────────────── */
+    /* ── Layout ─────────────────────────────────────────────────────────── */
     .scene {
-      position: fixed; inset: 0;
-      display: flex; flex-direction: column; align-items: center;
-      z-index: 10; overflow: hidden;
+      position: fixed; inset: 0; z-index: 10;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: clamp(24px, 5vh, 56px);
     }
 
-    /* ── Hero text ─────────────────────────────────────────────────────── */
+    /* ── Header ─────────────────────────────────────────────────────────── */
     .hero {
-      flex-shrink: 0; text-align: center;
-      padding: clamp(32px,6vh,72px) 24px clamp(20px,3vh,36px);
-      pointer-events: none;
-      transition: opacity 0.5s ease, transform 0.5s ease;
+      text-align: center;
+      transition: opacity 0.4s ease, transform 0.4s ease;
     }
     .hero.hidden {
-      opacity: 0;
-      transform: translateY(-12px);
-      pointer-events: none;
+      opacity: 0; transform: translateY(-10px); pointer-events: none;
     }
     .eyebrow {
-      font-size: clamp(0.60rem,1.4vw,0.72rem);
-      font-weight: 700; letter-spacing: 0.30em; text-transform: uppercase;
+      font-size: clamp(0.58rem, 1.3vw, 0.70rem);
+      font-weight: 700; letter-spacing: 0.28em; text-transform: uppercase;
       color: rgba(110,155,255,0.70);
-      margin-bottom: 16px;
+      margin-bottom: 12px;
     }
     .hero h1 {
-      font-size: clamp(2.2rem,7vw,4.4rem);
-      font-weight: 800; letter-spacing: -0.025em; line-height: 1.02;
+      font-size: clamp(2rem, 6vw, 3.8rem);
+      font-weight: 800; letter-spacing: -0.025em; line-height: 1.05;
       background: linear-gradient(175deg, #ffffff 0%, rgba(190,210,255,0.82) 100%);
       -webkit-background-clip: text; -webkit-text-fill-color: transparent;
       background-clip: text;
     }
 
-    /* ── Ball anchor ───────────────────────────────────────────────────── */
-    .ball-anchor {
-      position: absolute; bottom: 0; left: 50%;
-      transform: translateX(-50%);
-      z-index: 20;
-    }
-
+    /* ── Ball ───────────────────────────────────────────────────────────── */
     .ball-stage {
-      transform: translateY(calc(var(--ball-sz) * var(--ball-crop)));
-      animation: ball-float 6s ease-in-out infinite;
+      flex-shrink: 0;
       cursor: pointer;
       -webkit-tap-highlight-color: transparent;
       user-select: none;
+      animation: ball-float 6s ease-in-out infinite;
     }
     @keyframes ball-float {
-      0%,100% { transform: translateY(calc(var(--ball-sz) * var(--ball-crop))); }
-      50%     { transform: translateY(calc(var(--ball-sz) * var(--ball-crop) - 14px)); }
+      0%,100% { transform: translateY(0); }
+      50%     { transform: translateY(-12px); }
     }
 
     .ball-stage.pulse { animation: ball-float 6s ease-in-out infinite, ball-pulse 0.55s ease; }
@@ -98,7 +88,6 @@
       100% { filter: brightness(1)   drop-shadow(0 0  0px rgba(239,68,68,0)); }
     }
 
-    /* ── Ball sphere ───────────────────────────────────────────────────── */
     .ball {
       width: var(--ball-sz); height: var(--ball-sz);
       border-radius: 50%; overflow: hidden; position: relative;
@@ -107,9 +96,7 @@
         0 0  50px 14px rgba(85,125,255,0.20),
         0 0  90px 30px rgba(65,100,230,0.13),
         0 0 160px 60px rgba(45,80,200,0.08),
-        0 0 260px 90px rgba(25,55,160,0.04),
-        0 calc(var(--ball-sz)*0.43) calc(var(--ball-sz)*0.10) rgba(0,0,0,0.95),
-        0 calc(var(--ball-sz)*0.47) calc(var(--ball-sz)*0.18) rgba(0,0,0,0.75);
+        0 20px 40px 10px rgba(0,0,0,0.80);
     }
     .sph-spec1 {
       position: absolute; inset: 0; pointer-events: none;
@@ -148,9 +135,9 @@
         inset 0 -3px 8px rgba(0,0,0,0.22);
       display: flex; align-items: center; justify-content: center;
       overflow: hidden;
+      transition: opacity 0.2s;
     }
 
-    /* The "8" — default state */
     .eight {
       position: absolute;
       font-size: calc(var(--ball-sz) * 0.108);
@@ -162,7 +149,6 @@
       transition: opacity 0.3s ease;
     }
 
-    /* Pick display — shown inside circle while cycling */
     .pick-display {
       position: absolute; inset: 0;
       display: flex; flex-direction: column;
@@ -196,7 +182,7 @@
       margin-top: 1%;
     }
 
-    /* ── Spinner (replaces circle content while loading) ──────────────── */
+    /* ── Spinner ───────────────────────────────────────────────────────── */
     .spinner-wrap {
       position: absolute; top: 50%; left: 50%;
       transform: translate(-50%, -50%);
@@ -216,6 +202,16 @@
 
     .ball.loading .circle-wrap  { opacity: 0; }
     .ball.loading .spinner-wrap { opacity: 1; }
+
+    /* ── Hint label ─────────────────────────────────────────────────────── */
+    .hint {
+      font-size: clamp(0.65rem, 1.4vw, 0.78rem);
+      color: rgba(255,255,255,0.28);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      transition: opacity 0.4s ease;
+    }
+    .hint.hidden { opacity: 0; }
   </style>
 </head>
 <body>
@@ -223,44 +219,44 @@
 <div class="scene">
   <section class="hero" id="hero">
     <p class="eyebrow">Tonight's Picks</p>
-    <h1>Shake to Predict</h1>
+    <h1>Podz Liability Fund</h1>
   </section>
 
-  <div class="ball-anchor">
-    <div class="ball-stage" id="ballStage">
-      <div class="ball" id="ball">
-        <div class="sph-spec1"></div>
-        <div class="sph-spec2"></div>
-        <div class="sph-rear"></div>
-        <div class="sph-rim"></div>
+  <div class="ball-stage" id="ballStage">
+    <div class="ball" id="ball">
+      <div class="sph-spec1"></div>
+      <div class="sph-spec2"></div>
+      <div class="sph-rear"></div>
+      <div class="sph-rim"></div>
 
-        <div class="circle-wrap" id="circleWrap">
-          <span class="eight" id="eight">8</span>
-          <div class="pick-display" id="pickDisplay">
-            <span class="pick-name"  id="pickName"></span>
-            <span class="pick-rec"   id="pickRec"></span>
-            <span class="pick-line"  id="pickLine"></span>
-          </div>
+      <div class="circle-wrap" id="circleWrap">
+        <span class="eight" id="eight">8</span>
+        <div class="pick-display" id="pickDisplay">
+          <span class="pick-name"  id="pickName"></span>
+          <span class="pick-rec"   id="pickRec"></span>
+          <span class="pick-line"  id="pickLine"></span>
         </div>
+      </div>
 
-        <div class="spinner-wrap">
-          <div class="spinner-ring"></div>
-        </div>
+      <div class="spinner-wrap">
+        <div class="spinner-ring"></div>
       </div>
     </div>
   </div>
+
+  <p class="hint" id="hint">Tap to reveal tonight's pick</p>
 </div>
 
 <script>
 (function () {
   'use strict';
 
-  const API_BASE = window.location.hostname === 'localhost'
+  const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
     ? ''
     : 'https://your-render-app.onrender.com';
 
-  const COOLDOWN_MS  = 4000;
-  const CYCLE_MS     = 3000;
+  const COOLDOWN_MS = 4000;
+  const CYCLE_MS    = 3000;
 
   const hero        = document.getElementById('hero');
   const ballStage   = document.getElementById('ballStage');
@@ -270,6 +266,7 @@
   const pickName    = document.getElementById('pickName');
   const pickRec     = document.getElementById('pickRec');
   const pickLine    = document.getElementById('pickLine');
+  const hint        = document.getElementById('hint');
 
   let loading    = false;
   let cooldownAt = 0;
@@ -277,7 +274,7 @@
   let picks      = [];
   let pickIndex  = 0;
 
-  /* ── Shake ──────────────────────────────────────────────────────────── */
+  /* ── Shake ────────────────────────────────────────────────────────────── */
   let lastAcc = { x: 0, y: 0, z: 0 };
   function onMotion(e) {
     const a = e.accelerationIncludingGravity;
@@ -302,13 +299,13 @@
 
   ballStage.addEventListener('click', () => { bindMotion(); trigger(); });
 
-  /* ── Trigger ────────────────────────────────────────────────────────── */
+  /* ── Trigger ──────────────────────────────────────────────────────────── */
   function trigger() {
     if (loading || Date.now() < cooldownAt) return;
     fetchPredictions();
   }
 
-  /* ── Fetch ──────────────────────────────────────────────────────────── */
+  /* ── Fetch ────────────────────────────────────────────────────────────── */
   async function fetchPredictions() {
     loading = true;
     stopCycle();
@@ -320,7 +317,7 @@
       if (e.animationName === 'ball-pulse') ballStage.classList.remove('pulse');
     }, { once: true });
 
-    showEight();          // reset to 8 while loading
+    showEight();
     ball.classList.add('loading');
 
     try {
@@ -333,6 +330,7 @@
       picks = (data.players || []).filter(p => p.recommendation);
       if (picks.length) {
         hero.classList.add('hidden');
+        hint.classList.add('hidden');
         pickIndex = 0;
         ball.classList.remove('loading');
         showPick(picks[0]);
@@ -355,7 +353,7 @@
     }
   }
 
-  /* ── Pick cycling ───────────────────────────────────────────────────── */
+  /* ── Pick cycling ─────────────────────────────────────────────────────── */
   function startCycle() {
     stopCycle();
     if (picks.length <= 1) return;
@@ -386,7 +384,7 @@
 
   function populatePick(pick) {
     const lastName = pick.name.split(' ').slice(-1)[0];
-    const rec      = pick.recommendation;           // "OVER" | "UNDER"
+    const rec      = pick.recommendation;
     const line     = pick.prop_line != null ? `${pick.prop_line} pts` : '';
 
     pickName.textContent = lastName;
@@ -403,7 +401,6 @@
     pickRec.className    = 'pick-rec error';
     pickLine.textContent = '';
     pickDisplay.classList.add('visible');
-    // Reset back to 8 after 3s
     setTimeout(showEight, 3000);
   }
 
@@ -413,6 +410,7 @@
     setTimeout(() => {
       eight.style.opacity = '1';
       hero.classList.remove('hidden');
+      hint.classList.remove('hidden');
     }, 300);
   }
 }());

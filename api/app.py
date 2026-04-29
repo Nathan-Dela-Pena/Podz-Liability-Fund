@@ -104,33 +104,32 @@ def _load_model():
 
     if FUSION_CKPT.exists():
         from src.models.fusion import FusionModel
-        from src.models.lstm import LSTMBranch
-        from src.models.cnn import CNNBranch
-        m = FusionModel(
-            lstm_branch=LSTMBranch().to(DEVICE),
-            cnn_branch=CNNBranch().to(DEVICE),
-        )
+        m = FusionModel().to(DEVICE)
         state = torch.load(FUSION_CKPT, map_location=DEVICE)
-        m.load_state_dict(state)
+        cur = m.state_dict()
+        compatible = {k: v for k, v in state.items()
+                      if k in cur and cur[k].shape == v.shape}
+        skipped = len(state) - len(compatible)
+        m.load_state_dict(compatible, strict=False)
+        if skipped:
+            log.warning("Fusion checkpoint: skipped %d incompatible keys (stale checkpoint)", skipped)
         m.eval()
         _model      = m
         _model_mode = "fusion"
-        log.info("Loaded fusion model from %s", FUSION_CKPT)
+        log.info("Loaded fusion model from %s (%d/%d keys)", FUSION_CKPT, len(compatible), len(state))
 
     elif LSTM_CKPT.exists():
         from src.models.lstm import LSTMBranch
-        m = LSTMBranch(
-            input_size=len(FEATURE_COLS),
-            hidden_size=HIDDEN_SIZE,
-            num_layers=NUM_LAYERS,
-            dropout=DROPOUT,
-        ).to(DEVICE)
+        m = LSTMBranch().to(DEVICE)
         state = torch.load(LSTM_CKPT, map_location=DEVICE)
-        m.load_state_dict(state)
+        cur = m.state_dict()
+        compatible = {k: v for k, v in state.items()
+                      if k in cur and cur[k].shape == v.shape}
+        m.load_state_dict(compatible, strict=False)
         m.eval()
         _model      = m
         _model_mode = "lstm"
-        log.info("Loaded LSTM-only model from %s", LSTM_CKPT)
+        log.info("Loaded LSTM model from %s (%d/%d keys)", LSTM_CKPT, len(compatible), len(state))
 
     else:
         log.error("No checkpoint found in %s", CHECKPOINTS_DIR)
@@ -301,12 +300,12 @@ def _run_inference(window: np.ndarray) -> tuple[str, float]:
 
     with torch.no_grad():
         if mode == "fusion":
-            # Fusion model needs (seq, pose, frame) — use zeros for missing modalities
-            pose  = torch.zeros(1, 135, dtype=torch.float32).to(DEVICE)
-            frame = torch.zeros(1, 3, 224, 224, dtype=torch.float32).to(DEVICE)
-            logit, _ = model(seq, pose, frame)
+            from src.models.cnn import POSE_DIM
+            static = torch.zeros(1, 2,        dtype=torch.float32).to(DEVICE)
+            pose   = torch.zeros(1, POSE_DIM, dtype=torch.float32).to(DEVICE)
+            frame  = torch.zeros(1, 3, 224, 224, dtype=torch.float32).to(DEVICE)
+            logit, _ = model(seq, static, pose, frame)
         else:
-            # LSTM-only
             logit, _ = model(seq)
 
     prob = torch.sigmoid(logit.squeeze()).item()
