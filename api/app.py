@@ -84,7 +84,7 @@ limiter = Limiter(
 
 FRONTEND_DIR    = ROOT / "frontend"
 CHECKPOINTS_DIR = Path(os.environ.get("CHECKPOINTS_DIR", ROOT / "checkpoints"))
-FUSION_CKPT     = CHECKPOINTS_DIR / "fusion_best.pt"
+PER_PLAYER_CKPT = CHECKPOINTS_DIR / "per_player_best.pkl"
 LSTM_CKPT       = CHECKPOINTS_DIR / "lstm_best.pt"
 
 DEVICE = os.environ.get("MODEL_DEVICE") or (
@@ -96,27 +96,18 @@ DEVICE = os.environ.get("MODEL_DEVICE") or (
 # ---------------------------------------------------------------------------
 
 _model      = None
-_model_mode = None   # "fusion" or "lstm"
+_model_mode = None   # "per_player" or "lstm"
 
 
 def _load_model():
     global _model, _model_mode
 
-    if FUSION_CKPT.exists():
-        from src.models.fusion import FusionModel
-        m = FusionModel().to(DEVICE)
-        state = torch.load(FUSION_CKPT, map_location=DEVICE)
-        cur = m.state_dict()
-        compatible = {k: v for k, v in state.items()
-                      if k in cur and cur[k].shape == v.shape}
-        skipped = len(state) - len(compatible)
-        m.load_state_dict(compatible, strict=False)
-        if skipped:
-            log.warning("Fusion checkpoint: skipped %d incompatible keys (stale checkpoint)", skipped)
-        m.eval()
-        _model      = m
-        _model_mode = "fusion"
-        log.info("Loaded fusion model from %s (%d/%d keys)", FUSION_CKPT, len(compatible), len(state))
+    if PER_PLAYER_CKPT.exists():
+        import pickle
+        with open(PER_PLAYER_CKPT, "rb") as f:
+            _model = pickle.load(f)
+        _model_mode = "per_player"
+        log.info("Loaded per-player model from %s", PER_PLAYER_CKPT)
 
     elif LSTM_CKPT.exists():
         from src.models.lstm import LSTMBranch
@@ -135,7 +126,7 @@ def _load_model():
         log.error("No checkpoint found in %s", CHECKPOINTS_DIR)
         raise FileNotFoundError(
             f"No checkpoint found. Looked for:\n"
-            f"  {FUSION_CKPT}\n  {LSTM_CKPT}"
+            f"  {PER_PLAYER_CKPT}\n  {LSTM_CKPT}"
         )
 
 
@@ -188,7 +179,7 @@ def _load_windows_from_csv() -> dict:
             if "PROP_LINE" in row.index and pd.notna(row["PROP_LINE"]):
                 prop_line = round(float(row["PROP_LINE"]), 1)
 
-            results[name] = (window, prop_line)
+            results[name] = (window, prop_line, row)
 
         log.info("Loaded %d player windows from %s", len(results), csv_name)
         return results
@@ -289,26 +280,33 @@ def _match_player(odds_name: str, trained_names: set[str]) -> str | None:
 # Inference
 # ---------------------------------------------------------------------------
 
-def _run_inference(window: np.ndarray) -> tuple[str, float]:
+def _run_inference(window: np.ndarray, player_name: str = "", row: "pd.Series | None" = None) -> tuple[str, float]:
     """
-    Run forward pass and return (recommendation, confidence).
-    window: (WINDOW_SIZE, n_features) float32 ndarray
+    Run inference and return (recommendation, confidence).
+    Per-player mode uses the flat row; LSTM mode uses the window array.
     """
     model, mode = _get_model()
 
-    seq = torch.tensor(window[np.newaxis], dtype=torch.float32).to(DEVICE)  # (1, W, F)
-
-    with torch.no_grad():
-        if mode == "fusion":
-            from src.models.cnn import POSE_DIM
-            static = torch.zeros(1, 2,        dtype=torch.float32).to(DEVICE)
-            pose   = torch.zeros(1, POSE_DIM, dtype=torch.float32).to(DEVICE)
-            frame  = torch.zeros(1, 3, 224, 224, dtype=torch.float32).to(DEVICE)
-            logit, _ = model(seq, static, pose, frame)
+    if mode == "per_player":
+        from src.models.per_player import STATIC_COLS
+        from config import FEATURE_COLS, WINDOW_SIZE
+        if row is None:
+            flat = window.flatten()
+            feat_cols = [f"{feat}_t{t}" for t in range(WINDOW_SIZE) for feat in FEATURE_COLS]
+            x = flat[:len(feat_cols)].reshape(1, -1)
         else:
+            feat_cols = [f"{feat}_t{t}" for t in range(WINDOW_SIZE) for feat in FEATURE_COLS]
+            feat_cols += [c for c in STATIC_COLS if c in row.index]
+            x = np.array([row.get(c, 0.0) for c in feat_cols], dtype=np.float32).reshape(1, -1)
+        bundle = model
+        player_model = bundle["players"].get(player_name, bundle["global"])
+        prob = float(player_model.predict_proba(x)[0, 1])
+    else:
+        seq = torch.tensor(window[np.newaxis], dtype=torch.float32).to(DEVICE)
+        with torch.no_grad():
             logit, _ = model(seq)
+        prob = torch.sigmoid(logit.squeeze()).item()
 
-    prob = torch.sigmoid(logit.squeeze()).item()
     recommendation = "OVER" if prob >= 0.5 else "UNDER"
     confidence     = prob if prob >= 0.5 else 1.0 - prob
     return recommendation, round(confidence, 4)
@@ -343,9 +341,9 @@ def _run_inference_for_windows(player_windows: dict) -> list:
     """Run LSTM inference on every player in *player_windows*.
     Returns a list of result dicts (no prop_line — caller fills that in)."""
     results = []
-    for name, (window, prop_line) in player_windows.items():
+    for name, (window, prop_line, row) in player_windows.items():
         try:
-            recommendation, confidence = _run_inference(window)
+            recommendation, confidence = _run_inference(window, player_name=name, row=row)
         except Exception:
             log.exception("Inference failed for %s", name)
             continue
@@ -393,9 +391,9 @@ def predict():
             if matched is None:
                 log.debug("No trained match for '%s'", odds_name)
                 continue
-            window, _ = player_windows[matched]
+            window, _, row = player_windows[matched]
             try:
-                recommendation, confidence = _run_inference(window)
+                recommendation, confidence = _run_inference(window, player_name=matched, row=row)
             except Exception:
                 log.exception("Inference failed for %s", matched)
                 continue
