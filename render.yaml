@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: podz-liability-fund
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn api.app:app
+    envVars:
+      - key: ODDS_API_KEY
+        sync: false
+      - key: MODEL_DEVICE
+        value: cpu

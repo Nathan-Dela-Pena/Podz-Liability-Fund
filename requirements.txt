@@ -1,4 +1,8 @@
 python-dotenv
+flask
+flask-cors
+flask-limiter
+gunicorn
 nba_api
 requests
 pandas
