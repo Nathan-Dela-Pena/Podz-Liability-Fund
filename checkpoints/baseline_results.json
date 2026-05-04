@@ -1,0 +1,121 @@
+{
+  "train": {
+    "accuracy": 0.5932721712538226,
+    "f1_macro": 0.5924145299145299,
+    "auroc": 0.6029765032655207,
+    "confusion_matrix": [
+      [
+        209,
+        137
+      ],
+      [
+        129,
+        179
+      ]
+    ]
+  },
+  "val": {
+    "accuracy": 0.5529411764705883,
+    "f1_macro": 0.5453265765765766,
+    "auroc": 0.5057670126874279,
+    "confusion_matrix": [
+      [
+        29,
+        22
+      ],
+      [
+        16,
+        18
+      ]
+    ]
+  },
+  "test": {
+    "accuracy": 0.5135520684736091,
+    "f1_macro": 0.5030301644292999,
+    "auroc": 0.5156453503516542,
+    "confusion_matrix": [
+      [
+        231,
+        121
+      ],
+      [
+        220,
+        129
+      ]
+    ]
+  },
+  "per_player_test": {
+    "Al Horford": {
+      "accuracy": 0.5757575757575758,
+      "n": 33
+    },
+    "Brandin Podziemski": {
+      "accuracy": 0.6376811594202898,
+      "n": 69
+    },
+    "De'Anthony Melton": {
+      "accuracy": 0.4722222222222222,
+      "n": 36
+    },
+    "Draymond Green": {
+      "accuracy": 0.5166666666666667,
+      "n": 60
+    },
+    "Dylan Harper": {
+      "accuracy": 0.5166666666666667,
+      "n": 60
+    },
+    "Gary Payton II": {
+      "accuracy": 0.55,
+      "n": 20
+    },
+    "Gui Santos": {
+      "accuracy": 0.72,
+      "n": 25
+    },
+    "Jimmy Butler": {
+      "accuracy": 0.48484848484848486,
+      "n": 33
+    },
+    "Jonathan Kuminga": {
+      "accuracy": 0.42857142857142855,
+      "n": 14
+    },
+    "Keldon Johnson": {
+      "accuracy": 0.45714285714285713,
+      "n": 70
+    },
+    "Kristaps Porzingis": {
+      "accuracy": 0.625,
+      "n": 8
+    },
+    "Moses Moody": {
+      "accuracy": 0.47058823529411764,
+      "n": 51
+    },
+    "Pat Spencer": {
+      "accuracy": 0.3333333333333333,
+      "n": 9
+    },
+    "Quinten Post": {
+      "accuracy": 0.5882352941176471,
+      "n": 34
+    },
+    "Stephen Curry": {
+      "accuracy": 0.4,
+      "n": 35
+    },
+    "Stephon Castle": {
+      "accuracy": 0.5,
+      "n": 60
+    },
+    "Victor Wembanyama": {
+      "accuracy": 0.5087719298245614,
+      "n": 57
+    },
+    "Will Richard": {
+      "accuracy": 0.37037037037037035,
+      "n": 27
+    }
+  }
+}
